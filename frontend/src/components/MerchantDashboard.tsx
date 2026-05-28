@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { getMerchantSubscribers, type MerchantSubscriber } from "../stellar";
 import { formatAddress, formatXlm } from "../utils/format";
+import { usePolling } from "../hooks/usePolling";
 
 interface Props {
   merchantKey: string;
@@ -21,14 +22,13 @@ export default function MerchantDashboard({
   const [error, setError] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
-    setLoading(true);
+    setSubscribers((prev) => { if (prev.length === 0) setLoading(true); return prev; });
     setError(null);
     try {
       const data = await getMerchantSubscribers(merchantKey);
       setSubscribers(data);
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : String(e));
-      setSubscribers([]);
     } finally {
       setLoading(false);
     }
@@ -37,6 +37,8 @@ export default function MerchantDashboard({
   useEffect(() => {
     refresh();
   }, [refresh, refreshTrigger]);
+
+  usePolling({ callback: refresh, interval: 30000, enabled: true });
 
   if (loading) {
     return (
