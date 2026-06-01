@@ -28,6 +28,16 @@ pub fn publish_cancelled(env: &Env, user: &Address) {
         .publish((Symbol::new(env, "cancelled"), user.clone()), ());
 }
 
+pub fn publish_paused(env: &Env, user: &Address) {
+    env.events()
+        .publish((Symbol::new(env, "paused"), user.clone()), ());
+}
+
+pub fn publish_resumed(env: &Env, user: &Address) {
+    env.events()
+        .publish((Symbol::new(env, "resumed"), user.clone()), ());
+}
+
 pub fn publish_upgraded(env: &Env, new_wasm_hash: &BytesN<32>) {
     env.events()
         .publish((Symbol::new(env, "upgraded"),), new_wasm_hash.clone());

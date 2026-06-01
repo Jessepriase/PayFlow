@@ -416,8 +416,7 @@ impl FlowPay {
 
         env.storage().persistent().set(&key, &sub);
 
-        env.events()
-            .publish((Symbol::new(&env, "paused"), user), ());
+        events::publish_paused(&env, &user);
     }
 
     /// Resumes `user`'s paused subscription.
@@ -458,8 +457,7 @@ impl FlowPay {
 
         env.storage().persistent().set(&key, &sub);
 
-        env.events()
-            .publish((Symbol::new(&env, "resumed"), user), ());
+        events::publish_resumed(&env, &user);
     }
 
     /// Pauses all user-facing payment operations for the contract.
