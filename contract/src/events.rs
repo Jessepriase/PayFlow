@@ -99,9 +99,12 @@ pub fn publish_referred(env: &Env, user: &Address, referrer: &Address) {
         referrer.clone(),
     );
 }
+
 pub fn publish_fee_updated(env: &Env, collector: &Address, bps: u32) {
     env.events()
         .publish((Symbol::new(env, "fee_updated"),), (collector.clone(), bps));
+}
+
 pub fn publish_merchant_added(env: &Env, merchant: &Address) {
     env.events().publish(
         (Symbol::new(env, "merchant_added"), merchant.clone()),
@@ -114,9 +117,6 @@ pub fn publish_merchant_removed(env: &Env, merchant: &Address) {
         (Symbol::new(env, "merchant_removed"), merchant.clone()),
         (),
     );
-pub fn publish_fee_updated(env: &Env, collector: &Address, bps: u32) {
-    env.events()
-        .publish((Symbol::new(env, "fee_updated"),), (collector.clone(), bps));
 }
 
 pub fn publish_grace_period_updated(env: &Env, seconds: u64) {

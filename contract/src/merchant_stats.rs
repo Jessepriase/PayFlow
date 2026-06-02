@@ -84,6 +84,8 @@ pub fn decrement_subscriber_count(env: &Env, merchant: &Address) {
             .persistent()
             .set(&DataKey::MerchantSubCount(merchant.clone()), &(count - 1));
     }
+}
+
 /// Resets a merchant's cumulative revenue counter to zero.
 pub fn reset_merchant_revenue(env: &Env, merchant: &Address) {
     env.storage()

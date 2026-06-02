@@ -4,6 +4,7 @@ mod admin;
 mod batch;
 #[cfg(test)]
 mod bench;
+mod charge_exec;
 mod errors;
 mod events;
 mod fee;
@@ -279,38 +280,7 @@ impl FlowPay {
             env.panic_with_error(ContractError::GracePeriodElapsed);
         }
 
-        let token = token::Client::new(&env, &sub.token);
-
-        let mut merchant_amount = sub.amount;
-        if let Some((collector, bps)) = fee::get_fee(&env) {
-            let fee_amount = (sub.amount * (bps as i128)) / 10_000;
-            if fee_amount > 0 {
-                token.transfer_from(
-                    &env.current_contract_address(),
-                    &user,
-                    &collector,
-                    &fee_amount,
-                );
-                merchant_amount = sub.amount - fee_amount;
-            }
-        }
-
-        token.transfer_from(
-            &env.current_contract_address(),
-            &user,
-            &sub.merchant,
-            &merchant_amount,
-        );
-
-        merchant_stats::increment_revenue_with_daily(&env, &sub.merchant, merchant_amount);
-
-        sub.last_charged = now;
-
-        env.storage().persistent().set(&key, &sub);
-        extend_subscription_ttl(&env, &user);
-
-        subscription_history::record_charge(&env, &user, now);
-        events::publish_charged(&env, &user, &sub, 0, now);
+        charge_exec::execute_charge(&env, &user, &key, &mut sub, now);
     }
 
     pub fn extend_subscription_ttl(env: Env, user: Address) {
@@ -439,12 +409,6 @@ impl FlowPay {
         subscription_count::decrement(&env);
         merchant_stats::decrement_subscriber_count(&env, &sub.merchant);
         events::publish_cancelled(&env, &user);
-        if sub.active {
-            sub.active = false;
-            env.storage().persistent().set(&key, &sub);
-            subscription_count::decrement(&env);
-            events::publish_cancelled(&env, &user);
-        }
     }
 
     /// Pauses `user`'s subscription without cancelling it.
@@ -579,6 +543,8 @@ impl FlowPay {
     /// Returns the current admin address, or `None` if no admin has been set.
     pub fn get_admin(env: Env) -> Option<Address> {
         storage::get_admin_optional(&env)
+    }
+
     /// Returns the default token address set during `initialize()`, or `None` if not initialized.
     pub fn get_token(env: Env) -> Option<Address> {
         storage::get_token(&env)
@@ -711,6 +677,8 @@ impl FlowPay {
     /// Returns the number of active subscribers for a given merchant.
     pub fn get_merchant_subscriber_count(env: Env, merchant: Address) -> u64 {
         merchant_stats::get_merchant_subscriber_count(&env, &merchant)
+    }
+
     /// Resets a merchant's cumulative revenue counter to zero.
     /// Only the contract admin can call this.
     pub fn reset_merchant_revenue(env: Env, merchant: Address) {
@@ -811,6 +779,8 @@ impl FlowPay {
     pub fn clear_charge_history(env: Env, user: Address) {
         user.require_auth();
         subscription_history::clear_charge_history(&env, &user);
+    }
+
     /// Returns a paginated slice of charge timestamps for a subscriber.
     /// limit is capped at 12.
     pub fn get_charge_history_page(env: Env, user: Address, offset: u32, limit: u32) -> Vec<u64> {

@@ -19,8 +19,6 @@ pub fn store_referral(env: &Env, user: &Address, referrer: &Option<Address>) {
         env.storage().persistent().set(&key, r);
 
         events::publish_referred(env, user, r);
-        env.events()
-            .publish((Symbol::new(env, "referred"), user.clone()), r.clone());
     } else {
         env.storage().persistent().remove(&key);
     }
