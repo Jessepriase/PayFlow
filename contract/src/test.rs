@@ -1254,10 +1254,74 @@ fn test_ttl_extension() {
     let client = FlowPayClient::new(&env, &contract_id);
 
     client.subscribe(&user, &merchant, &1_0000000, &86400, &token_addr, &None, &None);
-    
-    // We can't easily assert the exact TTL in the test environment without more complex mock_all_auths 
-    // or internal access, but we can verify the function exists and doesn't panic.
+
+    env.ledger().with_mut(|l| {
+        l.ledger_seq += SUBSCRIPTION_TTL_LEDGERS - 1;
+    });
+
     client.extend_subscription_ttl(&user);
+
+    env.ledger().with_mut(|l| {
+        l.ledger_seq += 2;
+    });
+
+    assert!(client.get_subscription(&user).is_some());
+}
+
+#[test]
+#[should_panic]
+fn test_subscribe_interval_too_short_panics() {
+    let (env, contract_id, token_addr, user, merchant) = setup();
+    let client = FlowPayClient::new(&env, &contract_id);
+
+    client.subscribe(&user, &merchant, &1_0000000, &59, &token_addr, &None, &None);
+}
+
+#[test]
+fn test_subscribe_interval_minimum_succeeds() {
+    let (env, contract_id, token_addr, user, merchant) = setup();
+    let client = FlowPayClient::new(&env, &contract_id);
+
+    client.subscribe(&user, &merchant, &1_0000000, &60, &token_addr, &None, &None);
+
+    let sub = client.get_subscription(&user).unwrap();
+    assert_eq!(sub.interval, 60);
+}
+
+#[test]
+#[should_panic]
+fn test_subscribe_amount_above_cap_panics() {
+    let (env, contract_id, token_addr, user, merchant) = setup();
+    let client = FlowPayClient::new(&env, &contract_id);
+
+    client.subscribe(
+        &user,
+        &merchant,
+        &(MAX_SUBSCRIPTION_AMOUNT + 1),
+        &86400,
+        &token_addr,
+        &None,
+        &None,
+    );
+}
+
+#[test]
+fn test_subscribe_amount_at_cap_succeeds() {
+    let (env, contract_id, token_addr, user, merchant) = setup();
+    let client = FlowPayClient::new(&env, &contract_id);
+
+    client.subscribe(
+        &user,
+        &merchant,
+        &MAX_SUBSCRIPTION_AMOUNT,
+        &86400,
+        &token_addr,
+        &None,
+        &None,
+    );
+
+    let sub = client.get_subscription(&user).unwrap();
+    assert_eq!(sub.amount, MAX_SUBSCRIPTION_AMOUNT);
 }
 
 #[test]

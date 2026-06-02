@@ -76,6 +76,7 @@ pub enum DataKey {
 
 pub const SUBSCRIPTION_TTL_LEDGERS: u32 = 6307200; // ~1 year (assuming 5s blocks)
 pub const MAX_AMOUNT: i128 = 100_000_000_000;
+pub const MAX_SUBSCRIPTION_AMOUNT: i128 = 1_000_000_0000000;
 
 // ─────────────────────────────────────────────────────────────
 // Data types
