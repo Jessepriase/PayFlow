@@ -23,3 +23,10 @@ pub fn get_metadata(env: &Env, user: &Address) -> Option<String> {
         .persistent()
         .get(&DataKey::SubscriptionMeta(user.clone()))
 }
+
+/// Removes the metadata label for a subscriber, if one is set.
+pub fn clear_metadata(env: &Env, user: &Address) {
+    env.storage()
+        .persistent()
+        .remove(&DataKey::SubscriptionMeta(user.clone()));
+}

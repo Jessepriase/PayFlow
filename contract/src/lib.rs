@@ -753,12 +753,20 @@ impl FlowPay {
     /// Attaches a short label (e.g. plan name) to the caller's subscription.
     pub fn set_metadata(env: Env, user: Address, label: String) {
         user.require_auth();
-        subscription_metadata::set_metadata(&env, &user, label);
+        if let Err(err) = subscription_metadata::set_metadata(&env, &user, label) {
+            env.panic_with_error(err);
+        }
     }
 
     /// Returns the metadata label for a subscriber, or `None` if not set.
     pub fn get_metadata(env: Env, user: Address) -> Option<String> {
         subscription_metadata::get_metadata(&env, &user)
+    }
+
+    /// Clears the metadata label for the caller's subscription.
+    pub fn clear_metadata(env: Env, user: Address) {
+        user.require_auth();
+        subscription_metadata::clear_metadata(&env, &user);
     }
 
     // ─────────────────────────────────────────────────────────────
