@@ -120,6 +120,10 @@ impl FlowPay {
         assert!(amount > 0, "amount must be positive");
         assert!(interval > 0, "interval must be positive");
 
+        if interval < 60 {
+            env.panic_with_error(ContractError::IntervalTooShort);
+        }
+
         let token_client = token::Client::new(&env, &token);
         let allowance = token_client.allowance(&user, &env.current_contract_address());
         assert!(allowance >= amount, "insufficient allowance");
@@ -391,6 +395,11 @@ impl FlowPay {
         user.require_auth();
         assert!(limit > 0, "limit must be positive");
         spending_limit::set_daily_limit(&env, &user, limit);
+    }
+
+    /// Returns the daily spending limit for a user, or `None` if not set.
+    pub fn get_daily_limit(env: Env, user: Address) -> Option<i128> {
+        spending_limit::get_daily_limit(&env, &user)
     }
 
     // ─────────────────────────────────────────────────────────────

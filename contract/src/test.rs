@@ -370,6 +370,25 @@ fn test_zero_interval() {
     client.subscribe(&user, &merchant, &1_0000000, &0, &token_addr, &None, &None);
 }
 
+#[test]
+#[should_panic]
+fn test_interval_too_short() {
+    let (env, contract_id, token_addr, user, merchant) = setup();
+    let client = FlowPayClient::new(&env, &contract_id);
+
+    client.subscribe(&user, &merchant, &1_0000000, &59, &token_addr, &None, &None);
+}
+
+#[test]
+fn test_interval_minimum_valid() {
+    let (env, contract_id, token_addr, user, merchant) = setup();
+    let client = FlowPayClient::new(&env, &contract_id);
+
+    client.subscribe(&user, &merchant, &1_0000000, &60, &token_addr, &None, &None);
+    let sub = client.get_subscription(&user).unwrap();
+    assert_eq!(sub.interval, 60);
+}
+
 // ─────────────────────────────────────────────
 // Multi-user isolation
 // ─────────────────────────────────────────────
@@ -583,6 +602,19 @@ fn test_merchant_revenue_accumulates() {
 // ─────────────────────────────────────────────
 // spending_limit tests
 // ─────────────────────────────────────────────
+
+#[test]
+fn test_get_daily_limit() {
+    let (env, contract_id, _token_addr, user, _merchant) = setup();
+    let client = FlowPayClient::new(&env, &contract_id);
+
+    // Initial limit should be None
+    assert_eq!(client.get_daily_limit(&user), None);
+
+    // After setting, it should return Some(limit)
+    client.set_daily_limit(&user, &10_0000000);
+    assert_eq!(client.get_daily_limit(&user), Some(10_0000000));
+}
 
 #[test]
 fn test_daily_limit_allows_spend_within_limit() {
