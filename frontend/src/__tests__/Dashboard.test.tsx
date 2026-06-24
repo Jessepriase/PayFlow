@@ -3,13 +3,28 @@ import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { vi } from "vitest";
 
-vi.mock("../stellar");
-vi.mock("../hooks/usePolling", () => ({ usePolling: () => {} }));
+vi.mock("../stellar", () => ({
+  buildCancelTx: vi.fn(),
+  buildPayPerUseTx: vi.fn(),
+  getSubscription: vi.fn(() => Promise.resolve(null)),
+  getAllowance: vi.fn(() => Promise.resolve(0n)),
+  getDailyLimit: vi.fn(() => Promise.resolve(null)),
+  getDailySpent: vi.fn(() => Promise.resolve(0n)),
+  explorerTxUrl: vi.fn((hash: string) => `https://stellar.expert/tx/${hash}`),
+  server: {
+    getTransaction: vi.fn(() => Promise.resolve({ status: "SUCCESS" })),
+  },
+}));
+vi.mock("../hooks/usePolling", () => ({ usePolling: () => { } }));
+vi.mock("../hooks/useRpcHealth", () => ({
+  useRpcHealth: vi.fn(() => ({ healthy: true, error: null })),
+}));
 vi.mock("../components/SubscriptionHistory", () => ({
   default: () => <div data-testid="history" />,
 }));
 
 import * as stellar from "../stellar";
+import { useRpcHealth } from "../hooks/useRpcHealth";
 import Dashboard from "../components/Dashboard";
 
 const ACTIVE_SUB = {
@@ -18,10 +33,14 @@ const ACTIVE_SUB = {
   interval: 2592000,
   last_charged: 0,
   active: true,
+  paused: false,
 };
 
 function setup(sub: typeof ACTIVE_SUB | null = ACTIVE_SUB) {
   vi.mocked(stellar.getSubscription).mockResolvedValue(sub);
+  vi.mocked(stellar.getAllowance).mockResolvedValue(BigInt(0));
+  vi.mocked(stellar.getDailyLimit).mockResolvedValue(null);
+  vi.mocked(stellar.getDailySpent).mockResolvedValue(BigInt(0));
   vi.mocked(stellar.server.getTransaction).mockResolvedValue({ status: "SUCCESS" } as any);
 
   const onSign = vi.fn().mockResolvedValue("txhash1234567890");
@@ -35,12 +54,21 @@ function setup(sub: typeof ACTIVE_SUB | null = ACTIVE_SUB) {
 }
 
 describe("Dashboard", () => {
-  afterEach(() => vi.clearAllMocks());
+  afterEach(() => vi.resetAllMocks());
 
   it("shows no-subscription message when sub is null", async () => {
     setup(null);
     await waitFor(() =>
       expect(screen.getByText(/No active subscription found/)).toBeTruthy()
+    );
+  });
+
+  it("shows an inline RPC warning when RPC is unhealthy", async () => {
+    vi.mocked(useRpcHealth).mockReturnValue({ healthy: false, error: "RPC down" });
+    setup();
+
+    await waitFor(() =>
+      expect(screen.getByText(/RPC endpoint unreachable: RPC down/)).toBeTruthy()
     );
   });
 
@@ -55,8 +83,9 @@ describe("Dashboard", () => {
     await userEvent.click(screen.getByRole("button", { name: /confirm/i }));
 
     await waitFor(() =>
-      expect(screen.getByText(/Cancelled\. tx:/)).toBeTruthy()
+      expect(screen.getByText(/Cancelled\./)).toBeTruthy()
     );
+    expect(screen.getByRole("link", { name: /tx:/ })).toBeTruthy();
     expect(announce).toHaveBeenCalledWith("Transaction confirmed");
   });
 
@@ -86,7 +115,7 @@ describe("Dashboard", () => {
     await userEvent.click(screen.getByRole("button", { name: /pay/i }));
 
     await waitFor(() =>
-      expect(screen.getByText(/Paid! tx:/)).toBeTruthy()
+      expect(screen.getByText(/Paid!/)).toBeTruthy()
     );
   });
 

@@ -1,8 +1,8 @@
-import React, { useState } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { buildCancelTx, buildPayPerUseTx } from "../stellar";
 import { friendlyError } from "../utils/errors";
-import SubscriptionCardSkeleton from "./Skeleton";
 import SubscriptionCard from "./SubscriptionCard";
+import SubscriptionCardSkeleton from "./Skeleton";
 import SubscriptionHistory from "./SubscriptionHistory";
 import PayPerUseForm from "./PayPerUseForm";
 import ConfirmModal from "./ConfirmModal";
@@ -14,6 +14,7 @@ import ToastContainer from "./Toast";
 import { useSubscription } from "../hooks/useSubscription";
 import { usePolling } from "../hooks/usePolling";
 import { useToast } from "../hooks/useToast";
+import { useRpcHealth } from "../hooks/useRpcHealth";
 import { useTransaction } from "../hooks/useTransaction";
 
 interface Props {
@@ -21,11 +22,14 @@ interface Props {
   onSign: (xdr: string) => Promise<string>;
   refreshTrigger: number;
   announce: (message: string) => void;
+  onCancelled?: () => void;
+  onPayPerUse?: (amount: bigint) => void;
 }
 
-export default function Dashboard({ userKey, onSign, refreshTrigger, announce }: Props) {
+export default function Dashboard({ userKey, onSign, refreshTrigger, announce, onCancelled, onPayPerUse }: Props) {
   const { subscription: sub, loading, refresh } = useSubscription(userKey, refreshTrigger);
   const { toasts, addToast, removeToast } = useToast();
+  const { healthy: rpcHealthy, error: rpcError } = useRpcHealth();
   const cancelTx = useTransaction();
   const ppuTx = useTransaction();
   const [showConfirm, setShowConfirm] = useState(false);
@@ -33,8 +37,36 @@ export default function Dashboard({ userKey, onSign, refreshTrigger, announce }:
   const [showIncreaseAllowance, setShowIncreaseAllowance] = useState(false);
   const [allowanceRefresh, setAllowanceRefresh] = useState(0);
   const [dailyLimitRefresh, setDailyLimitRefresh] = useState(0);
+  const ppuInputRef = useRef<HTMLInputElement>(null);
 
   usePolling({ callback: refresh, interval: 30000, enabled: !!sub?.active });
+
+  useEffect(() => {
+    function handleKeyDown(e: KeyboardEvent) {
+      const key = e.key.toLowerCase();
+      const target = e.target as HTMLElement;
+      if (
+        target.tagName === "INPUT" ||
+        target.tagName === "TEXTAREA" ||
+        target.isContentEditable
+      ) {
+        return;
+      }
+
+      if (key === "x" && sub?.active && !showConfirm) {
+        e.preventDefault();
+        setShowConfirm(true);
+      }
+
+      if (key === "p" && sub?.active) {
+        e.preventDefault();
+        ppuInputRef.current?.focus();
+      }
+    }
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [sub?.active, showConfirm]);
 
   async function performCancel() {
     setShowConfirm(false);
@@ -44,8 +76,9 @@ export default function Dashboard({ userKey, onSign, refreshTrigger, announce }:
         const xdr = await buildCancelTx(userKey);
         return onSign(xdr);
       });
-      addToast(`Cancelled. tx: ${hash.slice(0, 12)}…`, "success");
+      addToast("Cancelled.", "success", hash);
       announce("Transaction confirmed");
+      onCancelled?.();
       refresh();
     } catch (e: unknown) {
       const msg = `Error: ${friendlyError(e instanceof Error ? e.message : String(e))}`;
@@ -61,8 +94,9 @@ export default function Dashboard({ userKey, onSign, refreshTrigger, announce }:
         const xdr = await buildPayPerUseTx(userKey, stroops);
         return onSign(xdr);
       });
-      addToast(`Paid! tx: ${hash.slice(0, 12)}…`, "success");
+      addToast("Paid!", "success", hash);
       announce("Transaction confirmed");
+      onPayPerUse?.(stroops);
     } catch (e: unknown) {
       const msg = `Error: ${friendlyError(e instanceof Error ? e.message : String(e))}`;
       addToast(msg, "error");
@@ -70,13 +104,30 @@ export default function Dashboard({ userKey, onSign, refreshTrigger, announce }:
     }
   }
 
-  if (loading) return <SubscriptionCardSkeleton />;
+  if (loading)
+    return (
+      <>
+        {!rpcHealthy && rpcError && (
+          <div className="network-warning" role="alert">
+            <span>⚠️</span>
+            <span>RPC endpoint unreachable: {rpcError}</span>
+          </div>
+        )}
+        <SubscriptionCardSkeleton />
+      </>
+    );
 
   const cancelPending = cancelTx.status === "pending";
   const ppuPending = ppuTx.status === "pending";
 
   return (
     <div className="dashboard">
+      {!rpcHealthy && rpcError && (
+        <div className="network-warning" role="alert">
+          <span>⚠️</span>
+          <span>RPC endpoint unreachable: {rpcError}</span>
+        </div>
+      )}
       {!sub ? (
         <div className="card">
           <p className="no-sub-text">No active subscription found.</p>
@@ -85,7 +136,10 @@ export default function Dashboard({ userKey, onSign, refreshTrigger, announce }:
         <>
           <SubscriptionCard
             subscription={sub}
+            userKey={userKey}
             onCancel={() => setShowConfirm(true)}
+            onPause={onSign}
+            onRefresh={refresh}
           />
 
           {cancelPending && (
@@ -105,16 +159,16 @@ export default function Dashboard({ userKey, onSign, refreshTrigger, announce }:
                     Increase Allowance
                   </button>
                 </div>
-              <DailyLimitCard
-                userKey={userKey}
-                refreshTrigger={dailyLimitRefresh}
-                onOpen={() => setShowDailyLimit(true)}
-              />
+                <DailyLimitCard
+                  userKey={userKey}
+                  refreshTrigger={dailyLimitRefresh}
+                  onOpen={() => setShowDailyLimit(true)}
+                />
 
               </div>
 
               <SubscriptionHistory userKey={userKey} />
-              <PayPerUseForm onPay={handlePayPerUse} loading={ppuPending} />
+              <PayPerUseForm ref={ppuInputRef} onPay={handlePayPerUse} loading={ppuPending} />
               {ppuPending && (
                 <p className="status-text status-text--pending">Confirming payment…</p>
               )}
