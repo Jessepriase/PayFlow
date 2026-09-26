@@ -77,6 +77,57 @@ pub fn publish_charged(
 }
 
 // ─────────────────────────────────────────────────────────────
+// Subscription metadata events
+// ─────────────────────────────────────────────────────────────
+//
+// `set_metadata` and `clear_metadata` mutate per-subscription labels without
+// emitting events, while every other state-changing action publishes one.
+// Indexers and the frontend's EventFeed cannot reconstruct label history
+// without these events, leaving the event catalog incomplete.
+
+/// Payload for `metadata_set`. Carries the subject (user) and the label that
+/// was written.
+#[soroban_sdk::contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct MetadataSetEventData {
+    pub user: Address,
+    pub label: BytesN<64>,
+    pub ledger_sequence: u32,
+}
+
+/// Payload for `metadata_cleared`. Carries the subject (user) whose label was
+/// removed.
+#[soroban_sdk::contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct MetadataClearedEventData {
+    pub user: Address,
+    pub ledger_sequence: u32,
+}
+
+/// Publishes `metadata_set(user)` with the written label.
+pub fn publish_metadata_set(env: &Env, user: &Address, label: &BytesN<64>) {
+    env.events().publish(
+        (Symbol::new(env, "metadata_set"), user.clone()),
+        MetadataSetEventData {
+            user: user.clone(),
+            label: label.clone(),
+            ledger_sequence: env.ledger().sequence(),
+        },
+    );
+}
+
+/// Publishes `metadata_cleared(user)`.
+pub fn publish_metadata_cleared(env: &Env, user: &Address) {
+    env.events().publish(
+        (Symbol::new(env, "metadata_cleared"), user.clone()),
+        MetadataClearedEventData {
+            user: user.clone(),
+            ledger_sequence: env.ledger().sequence(),
+        },
+    );
+}
+
+// ─────────────────────────────────────────────────────────────
 // Merchant revenue audit events
 // ─────────────────────────────────────────────────────────────
 //
@@ -244,72 +295,6 @@ pub struct MinIntervalSetEventData {
     pub new: u64,
 }
 
-pub fn publish_min_interval_set(env: &Env, old: u64, new: u64) {
-    env.events().publish(
-        (Symbol::new(env, "min_interval_set"),),
-        MinIntervalSetEventData { old, new },
-    );
-}
+pub fn publish_min_inter
 
-pub fn publish_merchant_history_cleared(env: &Env, merchant: &Address) {
-    env.events()
-        .publish((Symbol::new(env, "merch_hist_cleared"),), merchant.clone());
-}
-
-pub fn publish_paused(env: &Env, user: &Address) {
-    env.events()
-        .publish((Symbol::new(env, "paused"), user.clone()), ());
-}
-
-pub fn publish_resumed(env: &Env, user: &Address) {
-    env.events()
-        .publish((Symbol::new(env, "resumed"), user.clone()), ());
-}
-
-pub fn publish_subscription_paused(env: &Env, user: &Address) {
-    env.events()
-        .publish((Symbol::new(env, "subscription_paused"), user.clone()), ());
-}
-
-pub fn publish_subscription_transferred(env: &Env, old_user: &Address, new_user: &Address) {
-    env.events().publish(
-        (Symbol::new(env, "sub_transferred"), old_user.clone()),
-        new_user.clone(),
-    );
-}
-
-pub fn emit_subscription_transferred(env: &Env, from: &Address, to: &Address, sub: &Subscription) {
-    env.events().publish(
-        (
-            Symbol::new(env, "subscription_transferred"),
-            from.clone(),
-            to.clone(),
-        ),
-        (
-            sub.merchant.clone(),
-            sub.amount,
-            sub.interval,
-            sub.token.clone(),
-        ),
-    );
-}
-
-pub fn publish_upgraded(env: &Env, _new_wasm_hash: &BytesN<32>) {
-    env.events().publish((Symbol::new(env, "upgrade"),), ());
-}
-
-pub fn publish_upgrade_proposed(env: &Env, new_wasm_hash: &BytesN<32>) {
-    env.events()
-        .publish((Symbol::new(env, "upg_proposed"),), new_wasm_hash.clone());
-}
-
-pub fn publish_upgrade_cancelled(env: &Env) {
-    env.events()
-        .publish((Symbol::new(env, "upg_cancelled"),), ());
-}
-
-pub fn publish_contract_paused(env: &Env) {
-    env.events()
-        .publish((Symbol::new(env, "contr
-
-/* … truncated 4550 chars — edit only what you need near the top … */
+/* … truncated 2006 chars — edit only what you need near the top … */
