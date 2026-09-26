@@ -77,6 +77,35 @@ pub fn publish_charged(
 }
 
 // ─────────────────────────────────────────────────────────────
+// Admin transfer events
+// ─────────────────────────────────────────────────────────────
+//
+// `transfer_admin` stages a pending admin takeover by storing `PendingAdmin`,
+// but previously emitted nothing; only `accept_admin` fired `admin_transferred`.
+// That left the first half of the two-step handoff invisible to indexers and
+// monitoring. `admin_transfer_proposed` closes the gap by announcing the
+// proposed address at staging time. The `accept_admin` event is unchanged.
+
+/// Payload for `admin_transfer_proposed`. Carries the proposed new admin.
+#[soroban_sdk::contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AdminTransferProposedEventData {
+    pub new_admin: Address,
+    pub ledger_sequence: u32,
+}
+
+/// Publishes `admin_transfer_proposed(new_admin)` when a transfer is staged.
+pub fn publish_admin_transfer_proposed(env: &Env, new_admin: &Address) {
+    env.events().publish(
+        (Symbol::new(env, "admin_transfer_proposed"), new_admin.clone()),
+        AdminTransferProposedEventData {
+            new_admin: new_admin.clone(),
+            ledger_sequence: env.ledger().sequence(),
+        },
+    );
+}
+
+// ─────────────────────────────────────────────────────────────
 // Subscription metadata events
 // ─────────────────────────────────────────────────────────────
 //
@@ -230,71 +259,8 @@ pub struct BatchChargeSkipsEventData {
 /// Publishes the `batch_charge_skips` summary. Callers must only invoke this
 /// when at least one interesting (non-`Charged`, non-`Skipped`) outcome occurred.
 pub fn publish_batch_charge_skips(env: &Env, data: BatchChargeSkipsEventData) {
-    env.events()
-        .publish((Symbol::new(env, "batch_charge_skips"),), data);
-}
-
-pub fn publish_pay_per_use(env: &Env, user: &Address, merchant: &Address, amount: i128) {
     env.events().publish(
-        (Symbol::new(env, "pay_per_use"), user.clone()),
-        PayPerUseEventData {
-            merchant: merchant.clone(),
-            amount,
-            ledger_sequence: env.ledger().sequence(),
-        },
+        (Symbol::new(env, "batch_charge_skips"),),
+        data,
     );
 }
-
-pub fn publish_cancelled(env: &Env, user: &Address) {
-    env.events().publish(
-        (Symbol::new(env, "cancelled"), user.clone()),
-        CancelledEventData {
-            ledger_sequence: env.ledger().sequence(),
-        },
-    );
-}
-
-pub fn publish_cancelled_with_refund(env: &Env, user: &Address, refund_amount: i128) {
-    env.events().publish(
-        (Symbol::new(env, "cancelled_with_refund"), user.clone()),
-        CancelledWithRefundEventData {
-            refund_amount,
-            ledger_sequence: env.ledger().sequence(),
-        },
-    );
-}
-
-#[soroban_sdk::contracttype]
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct TrialExtendedEventData {
-    pub additional_seconds: u64,
-    pub new_last_charged: u64,
-    pub ledger_sequence: u32,
-}
-
-pub fn publish_trial_extended(
-    env: &Env,
-    user: &Address,
-    additional_seconds: u64,
-    new_last_charged: u64,
-) {
-    env.events().publish(
-        (Symbol::new(env, "trial_extended"), user.clone()),
-        TrialExtendedEventData {
-            additional_seconds,
-            new_last_charged,
-            ledger_sequence: env.ledger().sequence(),
-        },
-    );
-}
-
-#[soroban_sdk::contracttype]
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct MinIntervalSetEventData {
-    pub old: u64,
-    pub new: u64,
-}
-
-pub fn publish_min_inter
-
-/* … truncated 2006 chars — edit only what you need near the top … */
