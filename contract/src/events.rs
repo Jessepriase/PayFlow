@@ -77,6 +77,58 @@ pub fn publish_charged(
 }
 
 // ─────────────────────────────────────────────────────────────
+// Merchant revenue audit events
+// ─────────────────────────────────────────────────────────────
+//
+// `reset_merchant_revenue` and `prune_merchant_revenue_days` destroy merchant
+// revenue history. Without an on-chain event, ops tooling and indexers cannot
+// distinguish an operator reset from a bug or archival, and annual/journal
+// reconciliation has no trail. These events close that gap.
+
+/// Payload for `merchant_revenue_reset`. Emitted when an operator resets a
+/// merchant's revenue history.
+#[soroban_sdk::contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct MerchantRevenueResetEventData {
+    pub merchant: Address,
+    pub ledger_sequence: u32,
+}
+
+/// Payload for `merchant_revenue_pruned`. `removed_days` is the number of day
+/// buckets removed, so reconciliation can account for the pruned history.
+#[soroban_sdk::contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct MerchantRevenuePrunedEventData {
+    pub merchant: Address,
+    pub removed_days: u32,
+    pub ledger_sequence: u32,
+}
+
+/// Publishes `merchant_revenue_reset(merchant)`.
+pub fn publish_merchant_revenue_reset(env: &Env, merchant: &Address) {
+    env.events().publish(
+        (Symbol::new(env, "merchant_revenue_reset"), merchant.clone()),
+        MerchantRevenueResetEventData {
+            merchant: merchant.clone(),
+            ledger_sequence: env.ledger().sequence(),
+        },
+    );
+}
+
+/// Publishes `merchant_revenue_pruned(merchant)` with the number of removed
+/// day buckets.
+pub fn publish_merchant_revenue_pruned(env: &Env, merchant: &Address, removed_days: u32) {
+    env.events().publish(
+        (Symbol::new(env, "merchant_revenue_pruned"), merchant.clone()),
+        MerchantRevenuePrunedEventData {
+            merchant: merchant.clone(),
+            removed_days,
+            ledger_sequence: env.ledger().sequence(),
+        },
+    );
+}
+
+// ─────────────────────────────────────────────────────────────
 // Batch charge skip summary
 // ─────────────────────────────────────────────────────────────
 //
@@ -258,162 +310,6 @@ pub fn publish_upgrade_cancelled(env: &Env) {
 
 pub fn publish_contract_paused(env: &Env) {
     env.events()
-        .publish((Symbol::new(env, "contract_paused"),), ());
-}
+        .publish((Symbol::new(env, "contr
 
-pub fn publish_contract_unpaused(env: &Env) {
-    env.events()
-        .publish((Symbol::new(env, "contract_unpaused"),), ());
-}
-
-pub fn publish_daily_limit_set(env: &Env, user: &Address, limit: i128) {
-    env.events()
-        .publish((Symbol::new(env, "daily_limit_set"), user.clone()), limit);
-}
-
-pub fn publish_daily_limit_removed(env: &Env, user: &Address) {
-    env.events()
-        .publish((Symbol::new(env, "daily_limit_removed"), user.clone()), ());
-}
-
-pub fn publish_fee_cleared(env: &Env) {
-    env.events().publish((Symbol::new(env, "fee_cleared"),), ());
-}
-
-pub fn publish_daily_window_started(env: &Env, user: &Address) {
-    env.events()
-        .publish((Symbol::new(env, "daily_window_started"), user.clone()), ());
-}
-pub fn publish_subscription_amount_updated(
-    env: &Env,
-    user: &Address,
-    old_amount: i128,
-    new_amount: i128,
-) {
-    env.events().publish(
-        (Symbol::new(env, "sub_amount_updated"), user.clone()),
-        (old_amount, new_amount),
-    );
-}
-
-pub fn publish_subscription_interval_updated(
-    env: &Env,
-    user: &Address,
-    old_interval: u64,
-    new_interval: u64,
-) {
-    env.events().publish(
-        (Symbol::new(env, "sub_interval_updated"), user.clone()),
-        (old_interval, new_interval),
-    );
-}
-
-pub fn publish_merchant_withdrawal(env: &Env, merchant: &Address, amount: i128) {
-    env.events().publish(
-        (Symbol::new(env, "merchant_withdrawal"), merchant.clone()),
-        amount,
-    );
-}
-
-pub fn publish_referred(env: &Env, user: &Address, referrer: &Address) {
-    env.events().publish(
-        (Symbol::new(env, "referred"), user.clone()),
-        referrer.clone(),
-    );
-}
-
-pub fn publish_admin_transferred(env: &Env, old_admin: &Address, new_admin: &Address) {
-    env.events().publish(
-        (Symbol::new(env, "admin_transferred"),),
-        (old_admin.clone(), new_admin.clone()),
-    );
-}
-
-pub fn publish_fee_proposed(env: &Env, collector: &Address, bps: u32) {
-    env.events().publish(
-        (Symbol::new(env, "fee_proposed"),),
-        (collector.clone(), bps),
-    );
-}
-
-pub fn publish_fee_committed(env: &Env, collector: &Address, bps: u32) {
-    env.events().publish(
-        (Symbol::new(env, "fee_committed"),),
-        (collector.clone(), bps),
-    );
-}
-
-pub fn publish_merchant_added(env: &Env, merchant: &Address) {
-    env.events()
-        .publish((Symbol::new(env, "merchant_added"), merchant.clone()), ());
-}
-
-pub fn publish_merchant_removed(env: &Env, merchant: &Address) {
-    env.events()
-        .publish((Symbol::new(env, "merchant_removed"), merchant.clone()), ());
-}
-
-pub fn publish_merchant_frozen(env: &Env, merchant: &Address) {
-    env.events()
-        .publish((Symbol::new(env, "merchant_frozen"), merchant.clone()), ());
-}
-
-pub fn publish_merchant_unfrozen(env: &Env, merchant: &Address) {
-    env.events().publish(
-        (Symbol::new(env, "merchant_unfrozen"), merchant.clone()),
-        (),
-    );
-}
-
-pub fn publish_grace_period_proposed(env: &Env, seconds: u64) {
-    env.events()
-        .publish((Symbol::new(env, "grace_period_proposed"),), seconds);
-}
-
-pub fn publish_grace_period_committed(env: &Env, seconds: u64) {
-    env.events()
-        .publish((Symbol::new(env, "grace_period_committed"),), seconds);
-}
-
-pub fn publish_subscription_auto_resumed(env: &Env, user: &Address) {
-    env.events().publish(
-        (Symbol::new(env, "subscription_auto_resumed"), user.clone()),
-        (),
-    );
-}
-
-pub fn publish_migration_completed(env: &Env, version: u32, user_count: u32) {
-    env.events().publish(
-        (Symbol::new(env, "migration_completed"),),
-        (version, user_count),
-    );
-}
-
-pub fn publish_subscriber_index_ttl_extended(env: &Env, count: u64) {
-    env.events()
-        .publish((Symbol::new(env, "subscriber_index_ttl_extended"),), count);
-}
-
-/// Audit event for a successful admin repair of a stale subscriber index slot.
-pub fn publish_subscriber_index_cleared(env: &Env, user: &Address, index: u64) {
-    env.events().publish(
-        (Symbol::new(env, "subscriber_index_cleared"), user.clone()),
-        index,
-    );
-}
-
-pub fn publish_merchant_fee_recipient_set(env: &Env, merchant: &Address, recipient: &Address) {
-    env.events().publish(
-        (Symbol::new(env, "merchant_fee_recipient_set"), merchant.clone()),
-        recipient.clone(),
-    );
-}
-
-pub fn publish_merchant_fee_recipient_cleared(env: &Env, merchant: &Address) {
-    env.events().publish(
-        (Symbol::new(env, "merchant_fee_recipient_cleared"), merchant.clone()),
-        (),
-    );
-}
-
-
+/* … truncated 4550 chars — edit only what you need near the top … */
