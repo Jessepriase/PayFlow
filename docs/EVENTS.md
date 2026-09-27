@@ -570,19 +570,6 @@ Events related to merchant management.
   }
   ```
 
-### merchant_withdrawal
-
-- **Trigger**: `withdraw_merchant_revenue()`
-- **Topic keys**: `["merchant_withdrawal", merchant_address]`
-- **Payload schema**: `amount: i128`
-- **JSON example**:
-  ```json
-  {
-    "topic": ["merchant_withdrawal", "GDEF...ABC"],
-    "data": 1000000000
-  }
-  ```
-
 ---
 
 ## Daily Limit Events

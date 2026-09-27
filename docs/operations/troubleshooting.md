@@ -219,7 +219,7 @@ soroban contract invoke \
 
 ### Likely cause
 
-The admin has activated the circuit breaker (`pause_contract`). This blocks all state-changing operations (subscribe, charge, pay_per_use, withdraw) as an emergency measure.
+The admin has activated the circuit breaker (`pause_contract`). This blocks all state-changing operations (subscribe, charge, pay_per_use) as an emergency measure.
 
 ### Diagnosis steps
 

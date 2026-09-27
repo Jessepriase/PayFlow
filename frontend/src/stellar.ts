@@ -911,9 +911,6 @@ export function getMerchantRevenue(merchant: string): Promise<bigint> {
   });
 }
 
-export async function buildWithdrawMerchantRevenueTx(merchant: string): Promise<string> {
-  return buildTx(merchant, "withdraw_merchant_revenue", [addressVal(merchant)]);
-}
 
 export async function getBalance(
   publicKey: string,

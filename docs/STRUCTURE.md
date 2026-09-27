@@ -71,7 +71,7 @@ contract/src/
 ├── events.rs
 ├── fee.rs
 ├── grace.rs
-├── limits.rs
+├── limits.rs                 # Limits documentation pointer (validation/batch/spending_limit)
 ├── merchant_stats.rs
 ├── migration.rs             # Schema version + migrate(); CURRENT_VERSION = 3
 ├── min_interval.rs
@@ -81,13 +81,23 @@ contract/src/
 ├── subscription_count.rs
 ├── subscription_history.rs
 ├── subscription_metadata.rs
-├── token.rs
+├── token.rs                  # Note on token/vesting (vesting extracted to vesting/)
 ├── trial.rs
 ├── upgrade.rs               # propose_upgrade / commit_upgrade (test-only upgrade())
 ├── validation.rs
 ├── whitelist.rs
 ├── test.rs                  # Unit tests
 └── test_migration.rs
+```
+
+### `vesting/` (Academy Vesting Contract)
+
+```
+vesting/
+├── Cargo.toml
+└── src/
+    ├── lib.rs               # AcademyVestingContract
+    └── test.rs              # Unit & smoke tests
 ```
 
 ### `contract/Cargo.toml`

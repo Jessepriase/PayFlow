@@ -42,9 +42,7 @@ graph TD
 | `errors.rs`                | `ContractError` enum with 34 variants.                                                                                                                                                                                     |
 | `events.rs`                | All `publish_*` event helpers (~30+ event types) and event data structs.                                                                                                                                                   |
 | `fee.rs`                   | Protocol fee calculation (`calculate_fee_amount`), two-step propose/commit, fee-aware transfers (`transfer_subscription_charge`, `transfer_pay_per_use`), cumulative fee tracking, and per-merchant fee recipient routing. |
-| `grace.rs`                 | Two-step grace period proposal and commit.                                                                                                                                                                                 |
-| `limits.rs`                | Placeholder — currently empty.                                                                                                                                                                                             |
-| `merchant_stats.rs`        | Per-merchant revenue tracking (cumulative, daily buckets, history Vec), subscriber counts, merchant index for ranking, and revenue summaries.                                                                              |
+| `limits.rs`                | Documentation pointer for limit handling (limits live in `validation.rs`, `batch.rs`, `spending_limit.rs`, and `min_interval.rs`). |
 | `migration.rs`             | Schema version tracking (current: v3), v1→v2 migration (add `paused` field), v2→v3 migration (populate `referrer`).                                                                                                        |
 | `min_interval.rs`          | Minimum billing interval floor (default 3600s).                                                                                                                                                                            |
 | `referral.rs`              | Referrer storage, lookup, removal, and self-referral check. See [REFERRALS.md](./REFERRALS.md).                                                                                                                            |
@@ -53,7 +51,7 @@ graph TD
 | `subscription_count.rs`    | Active subscription counter (instance), append-only subscriber index with tombstoning, per-merchant subscriber count.                                                                                                      |
 | `subscription_history.rs`  | Per-user charge history (max 12 entries, circular buffer), paginated reads with ascending/descending sort.                                                                                                                 |
 | `subscription_metadata.rs` | Short subscription labels (max 64 bytes).                                                                                                                                                                                  |
-| `token.rs`                 | **Not used by FlowPay.** Contains an unrelated `AcademyVestingContract`.                                                                                                                                                   |
+| `token.rs`                 | Documentation note — `AcademyVestingContract` is extracted to its own dedicated `vesting/` package.                                                                                        |
 | `test.rs`                  | Contract unit tests.                                                                                                                                                                                                       |
 | `trial.rs`                 | Trial period end computation and trial extension.                                                                                                                                                                          |
 | `upgrade.rs`               | Two-step WASM upgrade (propose/commit) and upgrade event emission.                                                                                                                                                         |
@@ -180,7 +178,6 @@ Events are emitted from `events.rs` and kept separate from storage mutation so t
 | `merchant_frozen` / `merchant_unfrozen`            | Merchant freeze state changed                                 |
 | `grace_period_proposed` / `grace_period_committed` | Grace period updated                                          |
 | `sub_amount_updated` / `sub_interval_updated`      | Admin adjusted a subscription                                 |
-| `merchant_withdrawal`                              | Merchant withdrew revenue                                     |
 | `daily_limit_set` / `daily_limit_removed`          | Daily limit updated                                           |
 | `daily_window_started`                             | Daily spending window reset for a user                        |
 | `subscription_transferred`                         | Subscription ownership moved                                  |
@@ -211,7 +208,6 @@ Events are emitted from `events.rs` and kept separate from storage mutation so t
 | `merchant_frozen` / `merchant_unfrozen`                         | Merchant freeze state changed                                 |
 | `grace_period_proposed` / `grace_period_committed`              | Grace period updated                                          |
 | `sub_amount_updated` / `sub_interval_updated`                   | Admin adjusted a subscription                                 |
-| `merchant_withdrawal`                                           | Merchant withdrew revenue                                     |
 | `daily_limit_set` / `daily_limit_removed`                       | Daily limit updated                                           |
 | `daily_window_started`                                          | Daily spending window reset for a user                        |
 | `subscription_transferred`                                      | Subscription ownership moved                                  |
