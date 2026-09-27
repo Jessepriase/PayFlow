@@ -1030,16 +1030,21 @@
           "v0": {
             "topics": [
               {
-                "symbol": "log"
+                "symbol": "error"
+              },
+              {
+                "error": {
+                  "contract": 3
+                }
               }
             ],
             "data": {
               "vec": [
                 {
-                  "string": "caught panic 'min interval must be positive' from contract function 'Symbol(obj#237)'"
+                  "string": "failing with contract error"
                 },
                 {
-                  "u64": 0
+                  "u32": 3
                 }
               ]
             }
@@ -1061,7 +1066,32 @@
               },
               {
                 "error": {
-                  "wasm_vm": "invalid_action"
+                  "contract": 3
+                }
+              }
+            ],
+            "data": {
+              "string": "escalating error to panic"
+            }
+          }
+        }
+      },
+      "failed_call": true
+    },
+    {
+      "event": {
+        "ext": "v0",
+        "contract_id": "0000000000000000000000000000000000000000000000000000000000000003",
+        "type_": "diagnostic",
+        "body": {
+          "v0": {
+            "topics": [
+              {
+                "symbol": "error"
+              },
+              {
+                "error": {
+                  "contract": 3
                 }
               }
             ],
@@ -1086,7 +1116,7 @@
               },
               {
                 "error": {
-                  "wasm_vm": "invalid_action"
+                  "contract": 3
                 }
               }
             ],
@@ -1125,7 +1155,7 @@
               },
               {
                 "error": {
-                  "wasm_vm": "invalid_action"
+                  "contract": 3
                 }
               }
             ],

@@ -1570,7 +1570,7 @@ fn test_freeze_merchant_non_admin_panics() {
     let (env, contract_id, _token_addr, _user, merchant) = setup();
     let client = FlowPayClient::new(&env, &contract_id);
 
-    // No admin configured â€” require_admin panics with "admin not set"
+    // No admin configured â€” require_admin panics with NotInitialized (#7)
     client.freeze_merchant(&merchant, &None);
 }
 
@@ -1581,7 +1581,7 @@ fn test_unfreeze_merchant_non_admin_panics() {
     let (env, contract_id, _token_addr, _user, merchant) = setup();
     let client = FlowPayClient::new(&env, &contract_id);
 
-    // No admin configured â€” require_admin panics with "admin not set"
+    // No admin configured â€” require_admin panics with NotInitialized (#7)
     client.unfreeze_merchant(&merchant);
 }
 
@@ -6548,9 +6548,9 @@ fn prop_subscribe_interval_respects_min_interval_floor() {
     }
 }
 
-/// set_min_interval(0) panics.
+/// set_min_interval(0) aborts with the typed IntervalMustBePositive (code 3).
 #[test]
-#[should_panic(expected = "min interval must be positive")]
+#[should_panic(expected = "Error(Contract, #3)")]
 fn test_set_min_interval_zero_panics() {
     let (env, contract_id, _token_addr, _user, _merchant) = setup();
     let client = FlowPayClient::new(&env, &contract_id);
@@ -6560,14 +6560,56 @@ fn test_set_min_interval_zero_panics() {
     client.set_min_interval(&0u64);
 }
 
-/// Calling set_min_interval without a configured admin panics.
+/// set_min_interval(0) maps to the typed IntervalMustBePositive (code 3), not a
+/// host panic string, and leaves the floor at its default.
 #[test]
-#[should_panic(expected = "admin not set")]
+fn test_set_min_interval_zero_maps_to_typed_error() {
+    let (env, contract_id, _token_addr, _user, _merchant) = setup();
+    let client = FlowPayClient::new(&env, &contract_id);
+    let admin = Address::generate(&env);
+
+    client.set_initial_admin(&admin);
+
+    assert_eq!(
+        client.try_set_min_interval(&0u64),
+        Err(Ok(soroban_sdk::Error::from_contract_error(
+            crate::errors::ContractError::IntervalMustBePositive as u32
+        ))),
+        "set_min_interval(0) must map to ContractError::IntervalMustBePositive"
+    );
+
+    assert_eq!(
+        client.get_min_interval(),
+        crate::min_interval::DEFAULT_MIN_INTERVAL,
+        "a rejected zero floor must not be persisted"
+    );
+}
+
+/// Calling set_min_interval without a configured admin aborts with the typed
+/// NotInitialized (code 7) rather than a host panic string.
+#[test]
+#[should_panic(expected = "Error(Contract, #7)")]
 fn test_set_min_interval_non_admin_panics() {
     let (env, contract_id, _token_addr, _user, _merchant) = setup();
     let client = FlowPayClient::new(&env, &contract_id);
-    // No admin configured â€” require_admin panics with "admin not set"
+    // No admin configured â€” require_admin panics with NotInitialized (#7)
     client.set_min_interval(&7200u64);
+}
+
+/// The pre-initialize admin read behind `require_admin` maps to the typed
+/// NotInitialized (code 7) so clients can branch on a wire code.
+#[test]
+fn test_set_min_interval_uninitialized_maps_to_typed_error() {
+    let (env, contract_id, _token_addr, _user, _merchant) = setup();
+    let client = FlowPayClient::new(&env, &contract_id);
+
+    assert_eq!(
+        client.try_set_min_interval(&7200u64),
+        Err(Ok(soroban_sdk::Error::from_contract_error(
+            crate::errors::ContractError::NotInitialized as u32
+        ))),
+        "pre-initialize admin read must map to ContractError::NotInitialized"
+    );
 }
 
 // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -6642,14 +6684,68 @@ fn test_clear_merchant_revenue_history_idempotent() {
     );
 }
 
-/// Calling clear_merchant_revenue_history without an admin configured panics.
+/// Calling clear_merchant_revenue_history without an admin configured aborts
+/// with the typed NotInitialized (code 7) rather than a host panic string.
 #[test]
-#[should_panic(expected = "admin not set")]
+#[should_panic(expected = "Error(Contract, #7)")]
 fn test_clear_merchant_revenue_history_non_admin_panics() {
     let (env, contract_id, _token_addr, _user, merchant) = setup();
     let client = FlowPayClient::new(&env, &contract_id);
-    // No admin configured â€” require_admin panics
+    // No admin configured â€” require_admin panics with NotInitialized (#7)
     client.clear_merchant_revenue_history(&merchant);
+}
+
+// ─────────────────────────────────────────────
+// Issue #1043: typed NotInitialized on pre-initialize admin reads
+// ─────────────────────────────────────────────
+
+/// The typed NotInitialized (code 7) is raised by the shared admin read, so
+/// every admin-gated entrypoint maps to it, not just the ones whose tests
+/// pinned the old "admin not set" panic string.
+#[test]
+fn test_pre_initialize_admin_guards_map_to_typed_not_initialized() {
+    fn assert_not_initialized<T, E>(
+        res: Result<Result<T, E>, Result<soroban_sdk::Error, soroban_sdk::InvokeError>>,
+    ) {
+        match res {
+            Err(Ok(err)) => assert_eq!(
+                err,
+                soroban_sdk::Error::from_contract_error(
+                    crate::errors::ContractError::NotInitialized as u32
+                ),
+                "pre-initialize admin read must map to ContractError::NotInitialized"
+            ),
+            _ => panic!("pre-initialize admin read must fail with a typed error"),
+        }
+    }
+
+    let (env, contract_id, _token_addr, _user, merchant) = setup();
+    let client = FlowPayClient::new(&env, &contract_id);
+    let merchant_list = soroban_sdk::Vec::new(&env);
+
+    assert_not_initialized(client.try_pause_contract());
+    assert_not_initialized(client.try_set_max_batch_size(&10u32));
+    assert_not_initialized(client.try_set_whitelist_enabled(&false));
+    assert_not_initialized(client.try_freeze_merchant(&merchant, &None));
+    assert_not_initialized(client.try_whitelist_batch_add(&merchant_list));
+}
+
+/// Initialize-before-use is unchanged: once an admin is stored the same
+/// admin-gated call succeeds, and the view getter still reports the admin.
+#[test]
+fn test_initialize_before_use_unaffected_by_typed_not_initialized() {
+    let (env, contract_id, token_addr, _user, _merchant) = setup();
+    let client = FlowPayClient::new(&env, &contract_id);
+    let admin = Address::generate(&env);
+
+    // Pre-initialize the view getter is a plain Option, not a failure.
+    assert!(client.get_admin().is_none());
+
+    client.initialize(&token_addr, &admin);
+
+    assert_eq!(client.get_admin(), Some(admin));
+    client.pause_contract();
+    assert!(client.is_contract_paused());
 }
 
 // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€

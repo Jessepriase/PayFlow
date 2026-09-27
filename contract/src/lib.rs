@@ -1193,9 +1193,17 @@ impl FlowPay {
     }
 
     /// Sets the minimum allowed subscription interval in seconds.
-    /// Only the contract admin can call this. Panics if seconds == 0.
+    /// Only the contract admin can call this.
+    ///
+    /// # Errors
+    ///
+    /// Panics with `ContractError::IntervalMustBePositive` (code 3) when
+    /// `seconds` is zero, and with `ContractError::NotInitialized` (code 7)
+    /// when no admin has been stored yet. The zero case is validated before
+    /// the admin guard so an unconfigured contract still reports the invalid
+    /// input rather than the missing admin.
     pub fn set_min_interval(env: Env, seconds: u64) {
-        assert!(seconds > 0, "min interval must be positive");
+        validation::require_positive_interval(&env, seconds);
         admin::require_admin(&env);
         min_interval::set_min_interval(&env, seconds);
     }
