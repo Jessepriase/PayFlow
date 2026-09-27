@@ -108,4 +108,9 @@ pub enum ContractError {
     /// Replaces the previous untrappable host panic so callers and the
     /// frontend error map can handle the no-pending-transfer case gracefully.
     NoPendingAdmin = 45,
+    /// Returned when a subscription interval exceeds `MAX_SUBSCRIPTION_INTERVAL`.
+    /// Prevents `last_charged + interval` and grace-period math from overflowing
+    /// a `u64` timestamp. Subscriptions with an extreme legacy interval cannot
+    /// be re-created; document such cases and re-subscribe with a valid interval.
+    IntervalExceedsMaximum = 46,
 }
