@@ -1,5 +1,6 @@
 use soroban_sdk::{Address, Env};
 
+use crate::errors::ContractError;
 use crate::{DataKey, Subscription, SUBSCRIPTION_TTL_LEDGERS};
 
 pub fn get_subscription(env: &Env, user: &Address) -> Option<Subscription> {
@@ -37,11 +38,20 @@ pub fn get_token(env: &Env) -> Option<Address> {
     env.storage().instance().get(&DataKey::Token)
 }
 
+/// Returns the stored contract admin.
+///
+/// # Errors
+///
+/// Aborts with the typed `ContractError::NotInitialized` (code 7) when no
+/// admin has been stored yet. Every admin-gated entrypoint reaches this
+/// helper through `require_admin`, so a pre-`initialize` call surfaces a
+/// stable wire code that clients can branch on instead of a host panic
+/// string. Use [`get_admin_optional`] when absence is a normal outcome.
 pub fn get_admin(env: &Env) -> Address {
     env.storage()
         .instance()
         .get(&DataKey::Admin)
-        .expect("admin not set")
+        .unwrap_or_else(|| env.panic_with_error(ContractError::NotInitialized))
 }
 
 pub fn get_admin_optional(env: &Env) -> Option<Address> {

@@ -1074,7 +1074,7 @@ Auth: admin only.
 
 Returns: `()`.
 
-Errors: panics if `seconds == 0`.
+Errors: aborts with the typed `ContractError::IntervalMustBePositive` (code `3`) if `seconds == 0`, and with `ContractError::NotInitialized` (code `7`) if no admin has been stored yet. `seconds` is validated before the admin guard, so an unconfigured contract still reports the invalid input.
 
 CLI example:
 

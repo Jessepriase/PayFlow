@@ -46,6 +46,39 @@ use crate::{extend_subscription_ttl, DataKey, MAX_AMOUNT, Subscription};
 ///     while the batch path distinguishes `NoSubscription`
 ///     from `Inactive` — the mapping is explicit in the
 ///     conversion helpers below.
+///
+/// ─────────────────────────────────────────────────────────────
+/// Estimate-vs-live parity contract (Issue #1041)
+/// ─────────────────────────────────────────────────────────────
+///
+/// `get_batch_charge_estimate` mirrors the dry-run precheck but
+/// claims `Charged` from the allowance snapshot alone, whereas the
+/// live `batch_charge` path additionally performs fee collection
+/// and `try_auto_resume` side effects.  The parity fixture in
+/// `src/test.rs` (`estimate_live_parity_*`) drives both paths from
+/// an identical paused/grace/allowance snapshot and pins the
+/// following contract so a refactor cannot silently change it:
+///
+///   * For a *normal* snapshot (active, due, sufficient allowance,
+///     no fee configured, no pause expiry to auto-resume) the
+///     estimate outcome and the live outcome are **equal**:
+///     estimate `Charged` ⇔ live `Charged`.
+///   * Residual, intentional differences (do NOT "fix" these by
+///     making the paths identical — that is out of scope):
+///       - Fee collection: the live path debits the configured
+///         fee via `fee::collect_fee`; the estimate does not model
+///         the fee debit, so a snapshot that is only sufficient
+///         *before* the fee may estimate `Charged` while the live
+///         path fails the transfer.  The fixture bounds this by
+///         asserting equality only when no fee is configured.
+///       - `try_auto_resume`: the live path writes the auto-resumed
+///         subscription back to storage; the estimate performs a
+///         purely virtual auto-resume (no writes).  The fixture
+///         asserts the *outcome* matches for an expired pause
+///         expiry, while the estimate leaves storage untouched.
+///
+/// Keep this comment adjacent to the precheck so the divergence is
+/// documented next to the code that produces it.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) enum DryRunSkipOutcome {
     NoSubscription,
@@ -207,147 +240,6 @@ pub enum PayPerUseSimResult {
     AmountMustBePositive,
     /// `amount` exceeds the per-call cap (`MAX_AMOUNT`, `AmountExceedsMaximum`).
     AmountExceedsMaximum,
-    /// The daily spending limit would be exceeded (`DailyLimitExceeded`).
-    DailyLimitExceeded,
-    /// `pay_per_use_to` recipient is the contract's own address (`InvalidRecipient`).
-    InvalidRecipient,
-    /// The whitelist is enabled and `pay_per_use_to` recipient is not whitelisted.
-    MerchantNotWhitelisted,
-}
+    /// The daily spending limit would be exceeded (`DailyLimit
 
-/// Simulates a `pay_per_use` / `pay_per_use_to` call without making any state
-/// modifications. `recipient == None` mirrors `pay_per_use` (payment routed to
-/// the subscription merchant, no re-validation of the merchant whitelist);
-/// `Some(recipient)` mirrors `pay_per_use_to`.
-pub fn simulate_pay_per_use(
-    env: &Env,
-    user: Address,
-    amount: i128,
-    recipient: Option<Address>,
-) -> PayPerUseSimResult {
-    if storage::is_contract_paused(env) {
-        return PayPerUseSimResult::ContractPaused;
-    }
-    if amount <= 0 {
-        return PayPerUseSimResult::AmountMustBePositive;
-    }
-    if amount > MAX_AMOUNT {
-        return PayPerUseSimResult::AmountExceedsMaximum;
-    }
-
-    let key = DataKey::Subscription(user.clone());
-    let sub: Option<Subscription> = env.storage().persistent().get(&key);
-    let sub = match sub {
-        None => return PayPerUseSimResult::Inactive,
-        Some(s) => s,
-    };
-
-    if sub.paused {
-        return PayPerUseSimResult::SubscriptionPaused;
-    }
-    if !sub.active {
-        return PayPerUseSimResult::Inactive;
-    }
-
-    let is_pay_per_use_to = recipient.is_some();
-    let recipient = recipient.unwrap_or_else(|| sub.merchant.clone());
-
-    if is_pay_per_use_to {
-        if recipient == env.current_contract_address() {
-            return PayPerUseSimResult::InvalidRecipient;
-        }
-        if whitelist::is_whitelist_enabled(env) && !whitelist::is_whitelisted(env, &recipient) {
-            return PayPerUseSimResult::MerchantNotWhitelisted;
-        }
-    }
-
-    if let Some(limit) = spending_limit::get_daily_limit(env, &user) {
-        let spent = spending_limit::get_daily_spent(env, &user);
-        if spent + amount > limit {
-            return PayPerUseSimResult::DailyLimitExceeded;
-        }
-    }
-
-    if !validation::has_sufficient_allowance(env, &user, &sub.token, amount) {
-        return PayPerUseSimResult::InsufficientAllowance;
-    }
-
-    PayPerUseSimResult::WouldSucceed
-}
-
-/// Returns the next charge timestamp for a subscription, or `None` if not chargeable.
-/// Handles the trial case: when `last_charged` is in the future, it is the trial end time.
-pub fn compute_next_charge_at(sub: &Subscription) -> Option<u64> {
-    if !sub.active || sub.paused {
-        return None;
-    }
-    Some(sub.last_charged + sub.interval)
-}
-
-/// Attempts to auto-resume a paused subscription if the pause expiry has passed.
-/// Returns `true` if the subscription was auto-resumed (and caller should proceed with charge),
-/// or `false` if the subscription remains paused.
-pub fn try_auto_resume(env: &Env, user: &Address, sub: &mut Subscription, now: u64) -> bool {
-    if sub.paused {
-        let expiry = storage::get_pause_expiry(env, user);
-        if let Some(expiry_ts) = expiry {
-            if now >= expiry_ts {
-                sub.paused = false;
-                sub.active = true;
-                env.storage()
-                    .persistent()
-                    .set(&DataKey::Subscription(user.clone()), sub);
-                storage::clear_pause_expiry(env, user);
-                events::publish_subscription_auto_resumed(env, user);
-                return true;
-            }
-        }
-    }
-    false
-}
-
-/// Batch pre-check: returns `Ok(())` when a charge may proceed, or the skip result.
-pub fn precheck_charge(
-    sub: &Subscription,
-    now: u64,
-    grace_period: u64,
-) -> Result<(), ChargeResult> {
-    let next = compute_next_charge_at(sub).ok_or({
-        if sub.paused {
-            ChargeResult::Paused
-        } else {
-            ChargeResult::Inactive
-        }
-    })?;
-    if now < next {
-        return Err(ChargeResult::Skipped);
-    }
-    if grace_period > 0 && now > next + grace_period {
-        return Err(ChargeResult::GracePeriodElapsed);
-    }
-    Ok(())
-}
-
-/// Fee-aware transfer, bookkeeping, and persistence shared by `charge()` and `batch_charge()`.
-/// Returns the protocol fee deducted from the subscription amount.
-pub fn execute_charge(
-    env: &Env,
-    user: &Address,
-    key: &DataKey,
-    sub: &mut Subscription,
-    now: u64,
-) -> i128 {
-    let fee_amount = fee::transfer_subscription_charge(env, user, sub);
-    let net = sub.amount - fee_amount;
-
-    crate::check_and_update_global_volume(env, sub.amount);
-    merchant_stats::increment_revenue_with_daily(env, &sub.merchant, net);
-
-    sub.last_charged = now;
-    env.storage().persistent().set(key, sub);
-    extend_subscription_ttl(env, user);
-    subscription_history::record_charge(env, user, now);
-    events::publish_charged(env, user, sub, fee_amount, now);
-
-    fee_amount
-}
+/* … truncated 4834 chars — edit only what you need near the top … */
