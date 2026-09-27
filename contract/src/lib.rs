@@ -23,6 +23,8 @@ mod subscription_count;
 mod subscription_history;
 mod subscription_metadata;
 mod test;
+#[cfg(test)]
+mod test_migration;
 mod trial;
 mod upgrade;
 mod validation;
@@ -290,6 +292,11 @@ impl FlowPay {
         // admin signature cannot leave a token-only (partial) initialization.
         admin::initialize_admin(&env, &admin);
         env.storage().instance().set(&DataKey::Token, &token);
+        // Fresh deployments start at CURRENT_VERSION — no migration needed.
+        // Upgraded contracts retain their stored version until `migrate()` is called.
+        env.storage()
+            .instance()
+            .set(&DataKey::SchemaVersion, &migration::CURRENT_VERSION);
     }
 
     /// Permissionlessly refreshes the shared instance storage TTL.
@@ -310,7 +317,9 @@ impl FlowPay {
         if size > MAX_BATCH_SIZE_CEILING {
             env.panic_with_error(ContractError::InvalidBatchSize);
         }
+        let old = batch::get_max_batch_size(&env);
         env.storage().instance().set(&DataKey::MaxBatchSize, &size);
+        events::publish_max_batch_size_set(&env, old, size);
     }
 
     /// Returns the batch cap applied to the admin whitelist batch entrypoints
@@ -2338,6 +2347,7 @@ fn subscribe_inner(
     referrer: Option<Address>,
 ) {
     bump_instance_ttl(env);
+    migration::require_current_version(env);
     validation::require_valid_subscribe_addresses(env, &user, &merchant);
     user.require_auth();
 

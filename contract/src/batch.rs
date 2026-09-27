@@ -8,6 +8,8 @@ use crate::grace;
 use crate::validation;
 use crate::{DataKey, Subscription};
 
+pub const MAX_BATCH_SIZE: u32 = 50;
+
 // ─────────────────────────────────────────────────────────────
 // Decode-compatibility note
 // ─────────────────────────────────────────────────────────────

@@ -303,6 +303,20 @@ pub fn publish_min_interval_set(env: &Env, old: u64, new: u64) {
     );
 }
 
+#[soroban_sdk::contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct MaxBatchSizeSetEventData {
+    pub old: u32,
+    pub new: u32,
+}
+
+pub fn publish_max_batch_size_set(env: &Env, old: u32, new: u32) {
+    env.events().publish(
+        (Symbol::new(env, "max_batch_size_set"),),
+        MaxBatchSizeSetEventData { old, new },
+    );
+}
+
 pub fn publish_merchant_history_cleared(env: &Env, merchant: &Address) {
     env.events()
         .publish((Symbol::new(env, "merch_hist_cleared"),), merchant.clone());
@@ -363,8 +377,9 @@ pub fn emit_subscription_transferred(env: &Env, from: &Address, to: &Address, su
     );
 }
 
-pub fn publish_upgraded(env: &Env, _new_wasm_hash: &BytesN<32>) {
-    env.events().publish((Symbol::new(env, "upgrade"),), ());
+pub fn publish_upgraded(env: &Env, new_wasm_hash: &BytesN<32>) {
+    env.events()
+        .publish((Symbol::new(env, "upgrade"),), new_wasm_hash.clone());
 }
 
 pub fn publish_upgrade_proposed(env: &Env, new_wasm_hash: &BytesN<32>) {
