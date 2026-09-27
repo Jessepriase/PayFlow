@@ -6,6 +6,13 @@
 //!   already-migrated slots
 //! - Idempotent: calling migrate at CURRENT_VERSION is always a no-op (no panic, no version bump)
 //! - Version advances correctly across v1→v2→v3 steps
+//!
+//! Snapshots: these tests generate `test_snapshots/test_migration/*.json` at
+//! test time (see `test_snapshots/README.md`). Run a full `cargo test` and
+//! commit the generated files with the change that produced them; delete a
+//! snapshot when a test here is renamed or removed. These tests assert on typed
+//! values (`get_schema_version`, `get_subscription`) rather than on recorded
+//! output, so the snapshot stays a record of side effects, not the expectation.
 #![cfg(test)]
 
 use super::*;
