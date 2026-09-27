@@ -27,6 +27,7 @@ pub fn transfer_admin(env: &Env, new_admin: &Address) {
     env.storage()
         .instance()
         .set(&DataKey::PendingAdmin, new_admin);
+    events::publish_admin_transfer_proposed(env, new_admin);
 }
 
 /// Returns the currently proposed admin awaiting `accept_admin()`, if any.
