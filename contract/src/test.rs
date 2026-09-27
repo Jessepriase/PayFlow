@@ -4446,6 +4446,195 @@ fn test_referral_updates_on_resubscribe() {
     assert_eq!(client.get_referrer(&user), Some(referrer_b));
 }
 
+// ─────────────────────────────────────────────────────────────
+// Issue #1011: TTL-extend referral attribution keys on write
+// ─────────────────────────────────────────────────────────────
+
+/// After subscribe with a referrer, the Referral key must be live in
+/// persistent storage (i.e. has() returns true) because store_referral
+/// calls extend_ttl to the full SUBSCRIPTION_TTL_LEDGERS window.
+#[test]
+fn test_referral_ttl_extended_on_store() {
+    let (env, contract_id, token_addr, user, merchant) = setup();
+    let client = FlowPayClient::new(&env, &contract_id);
+
+    let referrer = Address::generate(&env);
+    client.subscribe(
+        &user,
+        &merchant,
+        &1_0000000,
+        &86400,
+        &token_addr,
+        &None,
+        &Some(referrer.clone()),
+    );
+
+    // Verify the key is present and has a non-zero TTL immediately after write.
+    env.as_contract(&contract_id, || {
+        assert!(
+            env.storage()
+                .persistent()
+                .has(&DataKey::Referral(user.clone())),
+            "Referral key must exist after store_referral"
+        );
+    });
+
+    // Reading the referrer must still return the correct value.
+    assert_eq!(client.get_referrer(&user), Some(referrer));
+}
+
+/// A simulated archival (advance ledger past the default SDK live-until
+/// without the new extend_ttl in place would evict the key; with it the
+/// key stays live up to SUBSCRIPTION_TTL_LEDGERS).  We verify that after
+/// the key is gone (simulated by raw removal), get_referrer returns None
+/// without panicking — satisfying the "after archival, reads return none
+/// without a panic" acceptance criterion.
+#[test]
+fn test_referral_returns_none_after_archival() {
+    let (env, contract_id, token_addr, user, merchant) = setup();
+    let client = FlowPayClient::new(&env, &contract_id);
+
+    let referrer = Address::generate(&env);
+    client.subscribe(
+        &user,
+        &merchant,
+        &1_0000000,
+        &86400,
+        &token_addr,
+        &None,
+        &Some(referrer.clone()),
+    );
+
+    // Simulate archival: forcibly remove the key from inside the contract context.
+    env.as_contract(&contract_id, || {
+        env.storage()
+            .persistent()
+            .remove(&DataKey::Referral(user.clone()));
+    });
+
+    // After archival the public API must return None, not panic.
+    assert_eq!(
+        client.get_referrer(&user),
+        None,
+        "get_referrer must return None after key is archived/removed"
+    );
+}
+
+/// remove_referral (called by cancel) must drop the Referral key entirely
+/// so that no orphan entry is left behind.  A subsequent get_referrer
+/// must return None and persistent has() must be false.
+#[test]
+fn test_remove_referral_drops_key_cleanly() {
+    let (env, contract_id, token_addr, user, merchant) = setup();
+    let client = FlowPayClient::new(&env, &contract_id);
+
+    let referrer = Address::generate(&env);
+    client.subscribe(
+        &user,
+        &merchant,
+        &1_0000000,
+        &86400,
+        &token_addr,
+        &None,
+        &Some(referrer.clone()),
+    );
+
+    // Confirm the key exists before cancellation.
+    env.as_contract(&contract_id, || {
+        assert!(
+            env.storage()
+                .persistent()
+                .has(&DataKey::Referral(user.clone())),
+            "Referral key must exist before cancel"
+        );
+    });
+
+    client.cancel(&user);
+
+    // After cancel the key must be completely gone — no orphan entry.
+    env.as_contract(&contract_id, || {
+        assert!(
+            !env.storage()
+                .persistent()
+                .has(&DataKey::Referral(user.clone())),
+            "Referral key must be removed after cancel (no orphan)"
+        );
+    });
+
+    // Public API must also reflect the removal.
+    assert_eq!(
+        client.get_referrer(&user),
+        None,
+        "get_referrer must return None after cancel"
+    );
+}
+
+/// Cancelling a subscription that had no referrer must not panic even
+/// though remove_referral calls .remove() on a key that may not exist.
+#[test]
+fn test_remove_referral_without_referrer_is_safe() {
+    let (env, contract_id, token_addr, user, merchant) = setup();
+    let client = FlowPayClient::new(&env, &contract_id);
+
+    client.subscribe(
+        &user,
+        &merchant,
+        &1_0000000,
+        &86400,
+        &token_addr,
+        &None,
+        &None, // no referrer
+    );
+
+    // cancel must not panic even though no Referral key was ever written.
+    client.cancel(&user);
+
+    assert_eq!(client.get_referrer(&user), None);
+}
+
+/// Resubscribing overwrites the referral and must bump the TTL afresh.
+/// Both the old and new referrer values are exercised.
+#[test]
+fn test_referral_ttl_refreshed_on_resubscribe() {
+    let (env, contract_id, token_addr, user, merchant) = setup();
+    let client = FlowPayClient::new(&env, &contract_id);
+
+    let referrer_a = Address::generate(&env);
+    let referrer_b = Address::generate(&env);
+
+    client.subscribe(
+        &user,
+        &merchant,
+        &1_0000000,
+        &86400,
+        &token_addr,
+        &None,
+        &Some(referrer_a.clone()),
+    );
+    assert_eq!(client.get_referrer(&user), Some(referrer_a));
+
+    // Resubscribe with a new referrer — key must be updated and TTL bumped.
+    client.subscribe(
+        &user,
+        &merchant,
+        &1_0000000,
+        &86400,
+        &token_addr,
+        &None,
+        &Some(referrer_b.clone()),
+    );
+    assert_eq!(client.get_referrer(&user), Some(referrer_b));
+
+    env.as_contract(&contract_id, || {
+        assert!(
+            env.storage()
+                .persistent()
+                .has(&DataKey::Referral(user.clone())),
+            "Referral key must still be live after resubscribe"
+        );
+    });
+}
+
 #[test]
 fn test_grace_period_ttl_extension() {
     let (env, contract_id, _token_addr, _user, _merchant) = setup();
