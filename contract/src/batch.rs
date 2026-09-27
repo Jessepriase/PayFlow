@@ -6,7 +6,7 @@ use crate::events::BatchChargeSkipsEventData;
 use crate::grace;
 use crate::validation;
 use crate::{DataKey, Subscription};
-// sync trigger
+
 pub const MAX_BATCH_SIZE: u32 = 50;
 
 // ─────────────────────────────────────────────────────────────

@@ -2770,6 +2770,56 @@ fn test_non_admin_set_max_batch_size_panics() {
     client.set_max_batch_size(&10);
 }
 
+// ─────────────────────────────────────────────────────────────
+// Issue #1026: max_batch_size_set event
+// ─────────────────────────────────────────────────────────────
+
+/// set_max_batch_size emits a max_batch_size_set event carrying both the
+/// previous and the new cap.
+#[test]
+fn test_set_max_batch_size_emits_event_with_old_and_new() {
+    let (env, contract_id, _token_addr, user, _merchant) = setup();
+    let client = FlowPayClient::new(&env, &contract_id);
+
+    env.as_contract(&contract_id, || {
+        storage::set_admin(&env, &user);
+    });
+
+    // Default cap before any override is MAX_BATCH_SIZE (50).
+    client.set_max_batch_size(&30);
+
+    let all_events = env.events().all();
+    let (_, topics, data) = all_events.get(all_events.len() - 1).unwrap();
+
+    let topic_symbol: Symbol = topics.get(0).unwrap().try_into_val(&env).unwrap();
+    assert_eq!(topic_symbol, Symbol::new(&env, "max_batch_size_set"));
+
+    let payload: events::MaxBatchSizeSetEventData = data.try_into_val(&env).unwrap();
+    assert_eq!(payload.old, 50u32); // default MAX_BATCH_SIZE
+    assert_eq!(payload.new, 30u32);
+}
+
+/// Updating the batch size a second time uses the previously stored value as
+/// the old value, not the compile-time default.
+#[test]
+fn test_set_max_batch_size_event_old_value_reflects_previous_set() {
+    let (env, contract_id, _token_addr, user, _merchant) = setup();
+    let client = FlowPayClient::new(&env, &contract_id);
+
+    env.as_contract(&contract_id, || {
+        storage::set_admin(&env, &user);
+    });
+
+    client.set_max_batch_size(&20);
+    client.set_max_batch_size(&40);
+
+    let all_events = env.events().all();
+    let (_, _, data) = all_events.get(all_events.len() - 1).unwrap();
+    let payload: events::MaxBatchSizeSetEventData = data.try_into_val(&env).unwrap();
+    assert_eq!(payload.old, 20u32);
+    assert_eq!(payload.new, 40u32);
+}
+
 #[test]
 fn test_cancel_and_refund_prorated_transfers_expected_amount() {
     let (env, contract_id, token_addr, user, merchant) = setup();
@@ -4165,6 +4215,32 @@ fn test_upgrade_event_emitted() {
     let (_, topics, _) = events.get(events.len() - 1).unwrap();
     let topic_symbol: Symbol = topics.get(0).unwrap().try_into_val(&env).unwrap();
     assert_eq!(topic_symbol, Symbol::new(&env, "upgrade"));
+}
+
+// ─────────────────────────────────────────────────────────────
+// Issue #1025: upgrade event must carry the new WASM hash
+// ─────────────────────────────────────────────────────────────
+
+/// The `upgrade` event data must contain the new WASM hash so indexers and
+/// keepers can audit which implementation went live.
+#[test]
+fn test_upgrade_event_carries_new_wasm_hash() {
+    let env = Env::default();
+    let contract_id = env.register_contract(None, FlowPay);
+    let expected_hash = BytesN::from_array(&env, &[0xAB; 32]);
+
+    env.as_contract(&contract_id, || {
+        events::publish_upgraded(&env, &expected_hash);
+    });
+
+    let all_events = env.events().all();
+    let (_, topics, data) = all_events.get(all_events.len() - 1).unwrap();
+
+    let topic_symbol: Symbol = topics.get(0).unwrap().try_into_val(&env).unwrap();
+    assert_eq!(topic_symbol, Symbol::new(&env, "upgrade"));
+
+    let emitted_hash: BytesN<32> = data.try_into_val(&env).unwrap();
+    assert_eq!(emitted_hash, expected_hash);
 }
 
 // ─────────────────────────────────────────────────────────────
