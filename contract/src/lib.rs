@@ -1191,9 +1191,17 @@ impl FlowPay {
     }
 
     /// Sets the minimum allowed subscription interval in seconds.
-    /// Only the contract admin can call this. Panics if seconds == 0.
+    /// Only the contract admin can call this.
+    ///
+    /// # Errors
+    ///
+    /// Panics with `ContractError::IntervalMustBePositive` (code 3) when
+    /// `seconds` is zero, and with `ContractError::NotInitialized` (code 7)
+    /// when no admin has been stored yet. The zero case is validated before
+    /// the admin guard so an unconfigured contract still reports the invalid
+    /// input rather than the missing admin.
     pub fn set_min_interval(env: Env, seconds: u64) {
-        assert!(seconds > 0, "min interval must be positive");
+        validation::require_positive_interval(&env, seconds);
         admin::require_admin(&env);
         min_interval::set_min_interval(&env, seconds);
     }
@@ -2453,41 +2461,3 @@ fn ensure_contract_not_paused(env: &Env) {
         env.panic_with_error(ContractError::ContractPaused);
     }
 }
-
-
-fn check_and_update_global_volume(env: &Env, amount: i128) {
-    let now = env.ledger().timestamp();
-    let key = DataKey::GlobalVolumeWindow;
-
-    let mut window: GlobalVolumeWindow = env
-        .storage()
-        .instance()
-        .get(&key)
-        .unwrap_or(GlobalVolumeWindow {
-            current_window_start: now,
-            accumulated_volume: 0,
-        });
-
-    // Reset window if hour boundary crossed
-    if now >= window.current_window_start + HOUR_IN_SECONDS {
-        window.current_window_start = now;
-        window.accumulated_volume = 0;
-    }
-
-    // Check if adding this amount would exceed the cap
-    let new_volume = window
-        .accumulated_volume
-        .checked_add(amount)
-        .unwrap_or_else(|| env.panic_with_error(ContractError::GlobalVolumeExceeded));
-
-    if new_volume > GLOBAL_MAX_VOLUME_PER_HOUR {
-        env.panic_with_error(ContractError::GlobalVolumeExceeded);
-    }
-
-    // Update and persist the new volume
-    window.accumulated_volume = new_volume;
-    env.storage()
-        .instance()
-        .set(&key, &window);
-}
-

@@ -101,7 +101,7 @@ Use the [quick-reference table](#quick-reference-table) for lookups, then jump t
 
 | Field               | Detail                                                      |
 | ------------------- | ----------------------------------------------------------- |
-| **When it occurs**  | `subscribe()` (or interval setters) receive `interval <= 0` |
+| **When it occurs**  | `subscribe()` (or interval setters) receive `interval <= 0`; also `set_min_interval(0)` |
 | **Immediate cause** | Interval failed the positive check                          |
 
 **Recovery steps**
@@ -171,6 +171,8 @@ Use the [quick-reference table](#quick-reference-table) for lookups, then jump t
 | ------------------- | ------------------------------------------------------------- |
 | **When it occurs**  | Any operational call before successful `initialize()`         |
 | **Immediate cause** | Admin/token (or related) config missing from instance storage |
+
+This is also the code every admin-gated entrypoint (`set_min_interval`, `set_max_batch_size`, `pause_contract`, whitelist and fee admin functions, …) returns when it is invoked before an admin has been stored, so clients can branch on `7` instead of matching a host panic string.
 
 **Recovery steps**
 

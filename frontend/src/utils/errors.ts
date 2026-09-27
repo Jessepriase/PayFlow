@@ -13,7 +13,9 @@ export const CONTRACT_ERRORS: Record<string, string> = {
   "interval must be positive": "Billing interval must be greater than zero.",
   "contract paused": "Payments are temporarily paused by the contract administrator.",
   "contractpaused": "Payments are temporarily paused by the contract administrator.",
-  "admin not set": "Contract admin is not configured.",
+  // Pre-`initialize` admin reads now abort with the typed
+  // `error(contract, #7)` (NotInitialized) instead of the old
+  // "admin not set" host panic string, so no string key is needed here.
   require_auth: "Wallet authorization required. Connect as the contract admin.",
   entryexpired:
     "Your subscription data has been archived by the Stellar network. Use Restore to recover it.",
@@ -32,7 +34,7 @@ export const CONTRACT_ERRORS: Record<string, string> = {
   "error(contract, #4)": "No subscription found. Please subscribe first.",
   "error(contract, #5)": "This subscription has been cancelled.",
   "error(contract, #6)": "Your next charge date hasn't arrived yet.",
-  "error(contract, #7)": "Service temporarily unavailable.",
+  "error(contract, #7)": "Contract is not set up yet. Service temporarily unavailable.",
   "error(contract, #8)": "Increase your token allowance and try again.",
   "error(contract, #9)": "This subscription lapsed. Please subscribe again.",
   "error(contract, #10)": "This merchant is not whitelisted. Ask the protocol admin to add them first.",
