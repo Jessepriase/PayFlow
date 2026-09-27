@@ -282,3 +282,8 @@ To configure multi-endpoint failover and ensure high availability for all backen
 
 All operational backend scripts under the `/scripts` directory utilize a resilient `MultiEndpointServer` (implemented in `scripts/rpc-client.ts`) instead of the standard `Server` from `@stellar/stellar-sdk/rpc`.
 On first use, the client performs health and passphrase validation across all configured endpoints to ensure they belong to the expected Stellar network. Consistently failing endpoints are dynamically deprioritized. Upon failure, the script will log a warning and transparently retry the request using the next available endpoint.
+
+## Handsoff notes
+
+<!-- handsoff-issue-1038 -->
+- #1038: Report the effective volume cap override in get_contract_config

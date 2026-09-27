@@ -126,6 +126,8 @@ pub enum DataKey {
     MaxFeeBps,
     // Feature: configurable whitelist batch size limit override
     MaxWhitelistBatchSize,
+    // Feature: counter for merchants with pending (unwithdrawn) revenue > 0
+    PendingMerchantRevCount,
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -817,7 +819,7 @@ impl FlowPay {
         env.storage().persistent().set(&key, &sub);
         storage::set_pause_expiry(&env, &user, expiry);
 
-        events::publish_paused(&env, &user);
+        events::publish_pause_until(&env, &user, expiry);
     }
 
     /// Resumes `user`'s paused subscription.
@@ -1193,9 +1195,17 @@ impl FlowPay {
     }
 
     /// Sets the minimum allowed subscription interval in seconds.
-    /// Only the contract admin can call this. Panics if seconds == 0.
+    /// Only the contract admin can call this.
+    ///
+    /// # Errors
+    ///
+    /// Panics with `ContractError::IntervalMustBePositive` (code 3) when
+    /// `seconds` is zero, and with `ContractError::NotInitialized` (code 7)
+    /// when no admin has been stored yet. The zero case is validated before
+    /// the admin guard so an unconfigured contract still reports the invalid
+    /// input rather than the missing admin.
     pub fn set_min_interval(env: Env, seconds: u64) {
-        assert!(seconds > 0, "min interval must be positive");
+        validation::require_positive_interval(&env, seconds);
         admin::require_admin(&env);
         min_interval::set_min_interval(&env, seconds);
     }
@@ -1680,7 +1690,7 @@ impl FlowPay {
     }
 
     /// Returns the number of active subscribers for a given merchant (as u32).
-    pub fn get_merchant_sub_count(env: Env, merchant: Address) -> u32 {
+    pub fn get_merchant_sub_count(env: Env, merchant: Address) -> u64 {
         subscription_count::get_merchant_sub_count(&env, &merchant)
     }
 
@@ -1688,7 +1698,7 @@ impl FlowPay {
     /// Capped at 50 merchants; panics with `BatchTooLarge` above that.
     /// Returns `(addr, 0)` for merchants with no recorded count.
     /// No auth required.
-    pub fn get_merchant_sub_counts(env: Env, merchants: Vec<Address>) -> Vec<(Address, u32)> {
+    pub fn get_merchant_sub_counts(env: Env, merchants: Vec<Address>) -> Vec<(Address, u64)> {
         merchant_stats::get_merchant_sub_counts(&env, &merchants)
     }
 
@@ -1962,15 +1972,7 @@ impl FlowPay {
         };
         let global_volume_utilization_pct = if pct > 100 { 100 } else { pct };
 
-        let total_merchants = merchant_stats::get_merchant_index_size(&env);
-        let mut pending_merchant_rev_count = 0;
-        for i in 0..total_merchants {
-            if let Some(merchant) = env.storage().persistent().get(&DataKey::MerchantIndex(i)) {
-                if merchant_stats::get_merchant_revenue(&env, &merchant) > 0 {
-                    pending_merchant_rev_count += 1;
-                }
-            }
-        }
+        let pending_merchant_rev_count = merchant_stats::get_pending_merchant_rev_count(&env);
 
         // Healthy when not paused, fully configured, and at least 1 day of TTL remaining (17_280 ledgers at ~5 s/ledger)
         let is_healthy = !contract_paused

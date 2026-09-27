@@ -14,6 +14,9 @@ interface Props {
   testId?: string;
 }
 
+// Keep the name used by existing amount-boundary callers.
+export { validateStroopInput as validateStroopAmount };
+
 export function validateStroopInput(
   raw: string,
   unit: AmountUnit,
