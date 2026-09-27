@@ -12477,3 +12477,247 @@ fn test_active_subscriber_page_only_last_active() {
 }
 
 
+
+// ─────────────────────────────────────────────────────────────
+// Admin event tests — #1027 / #1028 / #1029 / #1030
+// ─────────────────────────────────────────────────────────────
+
+// ── #1029: fee_bounds_set ─────────────────────────────────────
+
+#[test]
+fn test_fee_bounds_set_event_emitted() {
+    let (env, contract_id, _token_addr, _user, _merchant) = setup();
+    let client = FlowPayClient::new(&env, &contract_id);
+    install_admin(&env, &contract_id);
+
+    client.set_fee_bounds(&100, &500);
+
+    let events = env.events().all();
+    let (_, topics, data) = events.get(events.len() - 1).unwrap();
+    let topic_symbol: Symbol = topics.get(0).unwrap().try_into_val(&env).unwrap();
+    let (min_bps, max_bps): (u32, u32) = data.try_into_val(&env).unwrap();
+
+    assert_eq!(topic_symbol, Symbol::new(&env, "fee_bounds_set"));
+    assert_eq!(min_bps, 100u32);
+    assert_eq!(max_bps, 500u32);
+}
+
+#[test]
+fn test_fee_bounds_set_event_values_match_get_fee_bounds() {
+    let (env, contract_id, _token_addr, _user, _merchant) = setup();
+    let client = FlowPayClient::new(&env, &contract_id);
+    install_admin(&env, &contract_id);
+
+    client.set_fee_bounds(&50, &1000);
+
+    // Verify the contract state matches what the event reported.
+    let (min, max) = client.get_fee_bounds();
+    assert_eq!(min, 50u32);
+    assert_eq!(max, 1000u32);
+
+    let events = env.events().all();
+    let (_, _, data) = events.get(events.len() - 1).unwrap();
+    let (ev_min, ev_max): (u32, u32) = data.try_into_val(&env).unwrap();
+    assert_eq!(ev_min, min);
+    assert_eq!(ev_max, max);
+}
+
+#[test]
+fn test_fee_bounds_set_event_on_zero_min() {
+    let (env, contract_id, _token_addr, _user, _merchant) = setup();
+    let client = FlowPayClient::new(&env, &contract_id);
+    install_admin(&env, &contract_id);
+
+    client.set_fee_bounds(&0, &10_000);
+
+    let events = env.events().all();
+    let (_, topics, data) = events.get(events.len() - 1).unwrap();
+    let topic_symbol: Symbol = topics.get(0).unwrap().try_into_val(&env).unwrap();
+    let (min_bps, max_bps): (u32, u32) = data.try_into_val(&env).unwrap();
+
+    assert_eq!(topic_symbol, Symbol::new(&env, "fee_bounds_set"));
+    assert_eq!(min_bps, 0u32);
+    assert_eq!(max_bps, 10_000u32);
+}
+
+// ── #1030: global_volume_cap_set ──────────────────────────────
+
+#[test]
+fn test_global_volume_cap_set_event_emitted() {
+    let (env, contract_id, _token_addr, _user, _merchant) = setup();
+    let client = FlowPayClient::new(&env, &contract_id);
+    install_admin(&env, &contract_id);
+
+    let new_cap: i128 = 1_000_000_000;
+    client.set_global_volume_cap(&new_cap);
+
+    let events = env.events().all();
+    let (_, topics, data) = events.get(events.len() - 1).unwrap();
+    let topic_symbol: Symbol = topics.get(0).unwrap().try_into_val(&env).unwrap();
+    let (_old, new): (i128, i128) = data.try_into_val(&env).unwrap();
+
+    assert_eq!(topic_symbol, Symbol::new(&env, "global_volume_cap_set"));
+    assert_eq!(new, new_cap);
+}
+
+#[test]
+fn test_global_volume_cap_set_event_old_value_is_default_before_first_override() {
+    let (env, contract_id, _token_addr, _user, _merchant) = setup();
+    let client = FlowPayClient::new(&env, &contract_id);
+    install_admin(&env, &contract_id);
+
+    // First call — old should be the compile-time default (50 trillion).
+    let new_cap: i128 = 20_000_000_000_000;
+    client.set_global_volume_cap(&new_cap);
+
+    let events = env.events().all();
+    let (_, _, data) = events.get(events.len() - 1).unwrap();
+    let (old, new): (i128, i128) = data.try_into_val(&env).unwrap();
+
+    assert_eq!(old, 50_000_000_000_000i128); // GLOBAL_MAX_VOLUME_PER_HOUR
+    assert_eq!(new, new_cap);
+}
+
+#[test]
+fn test_global_volume_cap_set_event_old_value_tracks_previous_override() {
+    let (env, contract_id, _token_addr, _user, _merchant) = setup();
+    let client = FlowPayClient::new(&env, &contract_id);
+    install_admin(&env, &contract_id);
+
+    let first_cap: i128 = 10_000_000_000;
+    let second_cap: i128 = 5_000_000_000;
+
+    client.set_global_volume_cap(&first_cap);
+    client.set_global_volume_cap(&second_cap);
+
+    let events = env.events().all();
+    let (_, _, data) = events.get(events.len() - 1).unwrap();
+    let (old, new): (i128, i128) = data.try_into_val(&env).unwrap();
+
+    assert_eq!(old, first_cap);
+    assert_eq!(new, second_cap);
+}
+
+// ── #1027: whitelist_enabled ──────────────────────────────────
+
+#[test]
+fn test_whitelist_enabled_event_emitted_on_enable() {
+    let (env, contract_id, _token_addr, _user, _merchant) = setup();
+    let client = FlowPayClient::new(&env, &contract_id);
+    install_admin(&env, &contract_id);
+
+    // setup() starts with whitelist disabled; turn it on.
+    client.set_whitelist_enabled(&true);
+
+    let events = env.events().all();
+    let (_, topics, data) = events.get(events.len() - 1).unwrap();
+    let topic_symbol: Symbol = topics.get(0).unwrap().try_into_val(&env).unwrap();
+    let enabled: bool = data.try_into_val(&env).unwrap();
+
+    assert_eq!(topic_symbol, Symbol::new(&env, "whitelist_enabled"));
+    assert!(enabled);
+}
+
+#[test]
+fn test_whitelist_enabled_event_emitted_on_disable() {
+    let (env, contract_id, _token_addr, _user, _merchant) = setup();
+    let client = FlowPayClient::new(&env, &contract_id);
+    install_admin(&env, &contract_id);
+
+    // Enable first, then disable to check the disable event.
+    client.set_whitelist_enabled(&true);
+    client.set_whitelist_enabled(&false);
+
+    let events = env.events().all();
+    let (_, topics, data) = events.get(events.len() - 1).unwrap();
+    let topic_symbol: Symbol = topics.get(0).unwrap().try_into_val(&env).unwrap();
+    let enabled: bool = data.try_into_val(&env).unwrap();
+
+    assert_eq!(topic_symbol, Symbol::new(&env, "whitelist_enabled"));
+    assert!(!enabled);
+}
+
+#[test]
+fn test_whitelist_enabled_event_emitted_on_repeated_toggle() {
+    let (env, contract_id, _token_addr, _user, _merchant) = setup();
+    let client = FlowPayClient::new(&env, &contract_id);
+    install_admin(&env, &contract_id);
+
+    // Even a no-op toggle (same value) still emits — the contract does not
+    // suppress duplicate-value calls, matching the issue scope.
+    client.set_whitelist_enabled(&false);
+    client.set_whitelist_enabled(&false);
+
+    // Count whitelist_enabled events emitted during these calls.
+    let expected = Symbol::new(&env, "whitelist_enabled");
+    let count = env
+        .events()
+        .all()
+        .iter()
+        .filter(|(_, topics, _)| {
+            topics
+                .get(0)
+                .as_ref()
+                .and_then(|t| TryIntoVal::<_, Symbol>::try_into_val(t, &env).ok())
+                .map_or(false, |s| s == expected)
+        })
+        .count();
+
+    // Two set calls → at least two events (setup() may emit more, we just
+    // verify both set_whitelist_enabled calls produced events).
+    assert!(count >= 2);
+}
+
+// ── #1028: max_whitelist_batch_size_set ───────────────────────
+
+#[test]
+fn test_max_whitelist_batch_size_set_event_emitted() {
+    let (env, contract_id, _token_addr, _user, _merchant) = setup();
+    let client = FlowPayClient::new(&env, &contract_id);
+    install_admin(&env, &contract_id);
+
+    client.set_max_whitelist_batch_size(&25);
+
+    let events = env.events().all();
+    let (_, topics, data) = events.get(events.len() - 1).unwrap();
+    let topic_symbol: Symbol = topics.get(0).unwrap().try_into_val(&env).unwrap();
+    let (old, new): (u32, u32) = data.try_into_val(&env).unwrap();
+
+    assert_eq!(topic_symbol, Symbol::new(&env, "max_wl_batch_size_set"));
+    assert_eq!(old, 50u32); // default MAX_WHITELIST_BATCH_SIZE
+    assert_eq!(new, 25u32);
+}
+
+#[test]
+fn test_max_whitelist_batch_size_set_event_old_tracks_previous_value() {
+    let (env, contract_id, _token_addr, _user, _merchant) = setup();
+    let client = FlowPayClient::new(&env, &contract_id);
+    install_admin(&env, &contract_id);
+
+    client.set_max_whitelist_batch_size(&30);
+    client.set_max_whitelist_batch_size(&10);
+
+    let events = env.events().all();
+    let (_, _, data) = events.get(events.len() - 1).unwrap();
+    let (old, new): (u32, u32) = data.try_into_val(&env).unwrap();
+
+    assert_eq!(old, 30u32);
+    assert_eq!(new, 10u32);
+}
+
+#[test]
+fn test_max_whitelist_batch_size_set_event_old_is_default_before_first_override() {
+    let (env, contract_id, _token_addr, _user, _merchant) = setup();
+    let client = FlowPayClient::new(&env, &contract_id);
+    install_admin(&env, &contract_id);
+
+    // First override — old must be the compile-time default (50).
+    client.set_max_whitelist_batch_size(&100);
+
+    let events = env.events().all();
+    let (_, _, data) = events.get(events.len() - 1).unwrap();
+    let (old, new): (u32, u32) = data.try_into_val(&env).unwrap();
+
+    assert_eq!(old, 50u32);
+    assert_eq!(new, 100u32);
+}

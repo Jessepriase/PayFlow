@@ -329,7 +329,9 @@ impl FlowPay {
     /// `MAX_BATCH_SIZE_CEILING` (200), so whitelist batches always stay bounded.
     pub fn set_max_whitelist_batch_size(env: Env, size: u32) {
         admin::require_admin(&env);
+        let old = whitelist::get_max_whitelist_batch_size(&env);
         whitelist::set_max_whitelist_batch_size(&env, size);
+        events::publish_max_whitelist_batch_size_set(&env, old, size);
     }
 
     pub fn get_contract_config(env: Env) -> ContractConfig {
@@ -1271,6 +1273,7 @@ impl FlowPay {
         bump_instance_ttl(&env);
         admin::require_admin(&env);
         whitelist::set_whitelist_enabled(&env, enabled);
+        events::publish_whitelist_enabled(&env, enabled);
     }
 
     /// Returns whether the merchant whitelist is currently enabled. Defaults to true.
@@ -2108,9 +2111,15 @@ impl FlowPay {
         if new_cap <= 0 {
             env.panic_with_error(ContractError::InvalidVolumeCap);
         }
+        let old_cap: i128 = env
+            .storage()
+            .instance()
+            .get(&DataKey::GlobalVolumeCapOverride)
+            .unwrap_or(GLOBAL_MAX_VOLUME_PER_HOUR);
         env.storage()
             .instance()
             .set(&DataKey::GlobalVolumeCapOverride, &new_cap);
+        events::publish_global_volume_cap_set(&env, old_cap, new_cap);
     }
 
     // ─────────────────────────────────────────────────────────────
@@ -2127,6 +2136,7 @@ impl FlowPay {
         }
         env.storage().instance().set(&DataKey::MinFeeBps, &min_bps);
         env.storage().instance().set(&DataKey::MaxFeeBps, &max_bps);
+        events::publish_fee_bounds_set(&env, min_bps, max_bps);
     }
 
     /// Returns the configured (min_bps, max_bps) fee bounds, defaulting to
@@ -2433,7 +2443,15 @@ pub(crate) fn check_and_update_global_volume(env: &Env, amount: i128) {
         .checked_add(amount)
         .unwrap_or_else(|| env.panic_with_error(ContractError::ArithmeticOverflow));
 
-    if new_volume > GLOBAL_MAX_VOLUME_PER_HOUR {
+    // Use the admin-configurable override when set, falling back to the
+    // compile-time constant. This makes set_global_volume_cap effective.
+    let cap: i128 = env
+        .storage()
+        .instance()
+        .get(&DataKey::GlobalVolumeCapOverride)
+        .unwrap_or(GLOBAL_MAX_VOLUME_PER_HOUR);
+
+    if new_volume > cap {
         env.panic_with_error(ContractError::GlobalVolumeExceeded);
     }
 
@@ -2455,3 +2473,4 @@ fn ensure_contract_not_paused(env: &Env) {
         env.panic_with_error(ContractError::ContractPaused);
     }
 }
+

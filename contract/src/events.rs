@@ -537,4 +537,24 @@ pub fn publish_merchant_fee_recipient_cleared(env: &Env, merchant: &Address) {
     );
 }
 
+pub fn publish_fee_bounds_set(env: &Env, min_bps: u32, max_bps: u32) {
+    env.events()
+        .publish((Symbol::new(env, "fee_bounds_set"),), (min_bps, max_bps));
+}
+
+pub fn publish_global_volume_cap_set(env: &Env, old: i128, new: i128) {
+    env.events()
+        .publish((Symbol::new(env, "global_volume_cap_set"),), (old, new));
+}
+
+pub fn publish_whitelist_enabled(env: &Env, enabled: bool) {
+    env.events()
+        .publish((Symbol::new(env, "whitelist_enabled"),), enabled);
+}
+
+pub fn publish_max_whitelist_batch_size_set(env: &Env, old: u32, new: u32) {
+    env.events()
+        .publish((Symbol::new(env, "max_wl_batch_size_set"),), (old, new));
+}
+
 
