@@ -5324,6 +5324,51 @@ fn test_health_check_ttl_is_positive() {
 }
 
 #[test]
+fn test_health_check_pending_merchant_revenue_counter() {
+    let (env, contract_id, token_addr, user1, merchant1) = setup();
+    let client = FlowPayClient::new(&env, &contract_id);
+    let admin = Address::generate(&env);
+    client.initialize(&token_addr, &admin);
+
+    assert_eq!(client.contract_health_check().pending_merchant_rev_count, 0);
+
+    let user2 = Address::generate(&env);
+    let sac = StellarAssetClient::new(&env, &token_addr);
+    sac.mint(&user2, &10_000_0000000);
+    let token = TokenClient::new(&env, &token_addr);
+    token.approve(&user2, &contract_id, &10_000_0000000, &200000);
+
+    let merchant2 = Address::generate(&env);
+
+    client.subscribe(&user1, &merchant1, &1000, &86400, &token_addr, &None, &None);
+    client.subscribe(&user2, &merchant2, &1000, &86400, &token_addr, &None, &None);
+
+    env.ledger().set_timestamp(86400);
+    client.charge(&user1);
+
+    // Now merchant1 has revenue, merchant2 does not
+    let report1 = client.contract_health_check();
+    assert_eq!(report1.pending_merchant_rev_count, 1);
+
+    client.charge(&user2);
+    // Now both have revenue
+    let report2 = client.contract_health_check();
+    assert_eq!(report2.pending_merchant_rev_count, 2);
+
+    // Withdraw merchant1's revenue (mint contract_id balance first so transfer succeeds)
+    sac.mint(&contract_id, &1000);
+    client.withdraw_merchant_revenue(&merchant1);
+    let report3 = client.contract_health_check();
+    assert_eq!(report3.pending_merchant_rev_count, 1);
+
+    // Withdraw merchant2's revenue
+    sac.mint(&contract_id, &1000);
+    client.withdraw_merchant_revenue(&merchant2);
+    let report4 = client.contract_health_check();
+    assert_eq!(report4.pending_merchant_rev_count, 0);
+}
+
+#[test]
 fn test_ttl_extension() {
     let (env, contract_id, token_addr, user, merchant) = setup();
     let client = FlowPayClient::new(&env, &contract_id);
@@ -8695,6 +8740,21 @@ fn test_merchant_sub_count_resubscribe_different_merchant() {
 }
 
 #[test]
+fn test_get_merchant_sub_count_u64_boundary() {
+    let (env, contract_id, _token_addr, _user, merchant) = setup();
+    let client = FlowPayClient::new(&env, &contract_id);
+
+    let large_count: u64 = (u32::MAX as u64) + 1000;
+    env.as_contract(&contract_id, || {
+        env.storage()
+            .persistent()
+            .set(&DataKey::MerchantSubCount(merchant.clone()), &large_count);
+    });
+
+    assert_eq!(client.get_merchant_sub_count(&merchant), large_count);
+}
+
+#[test]
 fn test_merchant_sub_count_never_subscribed_returns_zero() {
     let (env, contract_id, _token_addr, _user, _merchant) = setup();
     let client = FlowPayClient::new(&env, &contract_id);
@@ -10817,6 +10877,33 @@ fn test_pause_until_auto_resume_on_batch_charge_and_clears_expiry() {
             .get(&DataKey::PauseExpiry(user.clone()));
         assert_eq!(pause_expiry, None);
     });
+}
+
+#[test]
+fn test_pause_until_emits_distinct_event_with_expiry() {
+    let (env, contract_id, token_addr, user, merchant) = setup();
+    let client = FlowPayClient::new(&env, &contract_id);
+
+    client.subscribe(&user, &merchant, &1000, &86400, &token_addr, &None, &None);
+
+    let expiry = 90000u64;
+    client.pause_until(&user, &expiry);
+
+    let events = env.events().all();
+    let (_, topics, data) = events.get(events.len() - 1).unwrap();
+    let topic_symbol: Symbol = topics.get(0).unwrap().try_into_val(&env).unwrap();
+    let topic_user: Address = topics.get(1).unwrap().try_into_val(&env).unwrap();
+
+    assert_eq!(topic_symbol, Symbol::new(&env, "pause_until"));
+    assert_eq!(topic_user, user);
+
+    let event_data: crate::events::PauseUntilEventData = data.try_into_val(&env).unwrap();
+    assert_eq!(event_data.expiry_timestamp, expiry);
+
+    // Also assert pause() still emits "paused"
+    client.resume(&user);
+    client.pause(&user);
+    assert_last_user_event(&env, "paused", &user);
 }
 
 // ─────────────────────────────────────────────────────────────

@@ -104,4 +104,8 @@ pub enum ContractError {
     /// `initialize` (token + admin together); this variant covers the narrow
     /// bootstrap path where only the admin slot is being set.
     AdminAlreadySet = 44,
+    /// Returned when `accept_admin` is called without a staged admin transfer.
+    /// Replaces the previous untrappable host panic so callers and the
+    /// frontend error map can handle the no-pending-transfer case gracefully.
+    NoPendingAdmin = 45,
 }
