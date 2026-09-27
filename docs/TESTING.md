@@ -241,7 +241,7 @@ A successful integration pass looks like: the UI reflects the subscription state
 
 ## End-to-End Testing
 
-End-to-end (E2E) testing here means manually walking the **entire** subscriber → keeper → charge → merchant withdraw lifecycle across both halves of the system, rather than testing any one function or component in isolation. There is no automated E2E harness in this repo today (no Playwright/Cypress suite) — this is a manual checklist to run before merging a change that could affect the full flow, and before any deployment promotion.
+End-to-end (E2E) testing here means manually walking the **entire** subscriber → keeper → charge → direct settlement lifecycle across both halves of the system, rather than testing any one function or component in isolation. There is no automated E2E harness in this repo today (no Playwright/Cypress suite) — this is a manual checklist to run before merging a change that could affect the full flow, and before any deployment promotion.
 
 ### Prerequisites
 
@@ -265,10 +265,9 @@ End-to-end (E2E) testing here means manually walking the **entire** subscriber �
    - [ ] Confirm a `charged` event appears via `watch-events.ts` with the expected `gross`/`fee`/`net` split.
    - [ ] Confirm the frontend UI (refresh or re-fetch) shows the updated `last_charged` timestamp and any charge-history view.
 
-4. **Merchant withdraws**
-   - [ ] As the merchant address, call `withdraw_merchant_revenue` (via the frontend if there's a merchant UI for it, or via CLI).
-   - [ ] Confirm the merchant's token balance increases by the expected net amount.
-   - [ ] Confirm a `merchant_withdrawal` event appears via `watch-events.ts`.
+4. **Merchant receives funds (non-custodial)**
+   - [ ] Confirm the merchant's token balance increases by the expected net amount immediately upon charge (without any withdrawal step).
+   - [ ] Confirm `get_merchant_revenue` increments by the net charge amount.
 
 5. **Cancel (cleanup / negative path)**
    - [ ] Cancel the subscription as the test user.
@@ -449,7 +448,7 @@ npx tsx watch-events.ts
 Nothing in CI touches a real network — there is no testnet RPC access from GitHub Actions today. That means the following are **manual-only**, run by a contributor or reviewer before merging changes that could affect them:
 
 - [Integration Testing](#integration-testing) — frontend against a live testnet contract
-- [End-to-End Testing](#end-to-end-testing) — the full subscriber → keeper → charge → withdraw checklist
+- [End-to-End Testing](#end-to-end-testing) — the full subscriber → keeper → charge → direct settlement checklist
 - [Keeper Testing](#keeper-testing) — dry-run and live-mode keeper validation
 
 ### Adding a new CI test

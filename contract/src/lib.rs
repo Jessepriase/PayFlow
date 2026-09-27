@@ -4,6 +4,13 @@
 #[cfg(test)]
 extern crate std;
 
+// Note on Limits:
+// Limit validation and constraints are modularized across:
+// - `validation.rs`: Amount validation (`MAX_SUBSCRIPTION_AMOUNT`), interval validation, and allowance checks.
+// - `batch.rs`: Batch size limits (`MAX_BATCH_SIZE`, `MAX_BATCH_PAUSE_SUBSCRIPTIONS`, `MAX_WHITELIST_BATCH_SIZE`).
+// - `spending_limit.rs`: Daily pay-per-use spending limits.
+// - `min_interval.rs`: Minimum billing interval configuration.
+
 mod admin;
 mod batch;
 #[cfg(feature = "bench")]
@@ -1712,57 +1719,17 @@ impl FlowPay {
     }
 
     /// Resets a merchant's cumulative revenue counter to zero.
+    /// Resets a merchant's cumulative revenue counter to zero.
     /// Only the contract admin can call this.
+    ///
+    /// Note on Merchant Revenue:
+    /// Merchant revenue in PayFlow is non-custodial. Charges and pay-per-use payments
+    /// transfer tokens directly from subscriber to merchant via SAC `transfer_from`.
+    /// The contract never holds merchant revenue funds; `get_merchant_revenue` maintains
+    /// an on-chain cumulative metric for merchant stats and analytics.
     pub fn reset_merchant_revenue(env: Env, merchant: Address) {
         admin::require_admin(&env);
         merchant_stats::reset_merchant_revenue(&env, &merchant);
-    }
-
-    /// Withdraws the merchant's accrued revenue from the contract balance
-    /// to their address.
-    ///
-    /// # Parameters
-    ///
-    /// - `merchant`: The merchant address. Must authorize the call.
-    ///
-    /// # Returns
-    ///
-    /// Returns nothing.
-    ///
-    /// # Auth
-    ///
-    /// Requires authorization from `merchant`.
-    ///
-    /// # Errors
-    ///
-    /// Panics if the contract is paused, the global token is not configured,
-    /// or the tracked accrued balance is zero or negative
-    /// (`ContractError::ZeroBalanceAvailable`).
-    ///
-    /// # Side Effects
-    ///
-    /// Resets the `MerchantRevenue` counter to zero before transferring
-    /// (reentrancy safety), then transfers tokens from the contract account
-    /// to `merchant` and emits `merchant_withdrawal`.
-    pub fn withdraw_merchant_revenue(env: Env, merchant: Address) {
-        ensure_contract_not_paused(&env);
-        merchant.require_auth();
-
-        let token_addr = storage::get_token(&env)
-            .unwrap_or_else(|| env.panic_with_error(ContractError::NotInitialized));
-
-        let amount = merchant_stats::get_merchant_revenue(&env, &merchant);
-        if amount <= 0 {
-            env.panic_with_error(ContractError::ZeroBalanceAvailable);
-        }
-
-        // Reset before transfer to guard against reentrancy.
-        merchant_stats::reset_merchant_revenue(&env, &merchant);
-
-        let token_client = token::Client::new(&env, &token_addr);
-        token_client.transfer(&env.current_contract_address(), &merchant, &amount);
-
-        events::publish_merchant_withdrawal(&env, &merchant, amount);
     }
 
     // ─────────────────────────────────────────────────────────────

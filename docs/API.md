@@ -79,7 +79,6 @@ This document tracks the current public contract surface in [contract/src/lib.rs
   - [clear\_merchant\_revenue\_history](#clear_merchant_revenue_history)
   - [get\_merchant\_subscriber\_count](#get_merchant_subscriber_count)
   - [reset\_merchant\_revenue](#reset_merchant_revenue)
-  - [withdraw\_merchant\_revenue](#withdraw_merchant_revenue)
   - [set\_daily\_limit](#set_daily_limit)
   - [remove\_daily\_limit](#remove_daily_limit)
   - [get\_daily\_limit](#get_daily_limit)
@@ -1694,35 +1693,14 @@ Auth: admin only.
 
 Returns: `()`.
 
+> **Note on Non-Custodial Revenue:**
+> Merchant revenue in PayFlow is non-custodial. Charges and pay-per-use operations transfer tokens directly from subscriber to merchant via SAC `transfer_from`. The contract never holds merchant revenue funds; `get_merchant_revenue` maintains an on-chain cumulative metric for merchant metrics and analytics.
+
 CLI example:
 
 ```bash
 soroban contract invoke --id <CONTRACT_ID> --source <ADMIN_KEY> --network testnet -- reset_merchant_revenue --merchant <MERCHANT_ADDRESS>
 ```
-
-### `withdraw_merchant_revenue`
-
-```
-withdraw_merchant_revenue(env: Env, merchant: Address)
-```
-
-| Name       | Type      | Description                           |
-| ---------- | --------- | ------------------------------------- |
-| `merchant` | `Address` | Merchant withdrawing accrued revenue. |
-
-Auth: `merchant.require_auth()`.
-
-Returns: `()`.
-
-Errors: `ContractError::NotInitialized`, `ContractError::ZeroBalanceAvailable`.
-
-CLI example:
-
-```bash
-soroban contract invoke --id <CONTRACT_ID> --source <MERCHANT_KEY> --network testnet -- withdraw_merchant_revenue --merchant <MERCHANT_ADDRESS>
-```
-
-_See also: [Merchant Integration Cookbook](./MERCHANT-INTEGRATION.md) for the full merchant onboarding → revenue → withdraw path._
 
 ### `set_daily_limit`
 

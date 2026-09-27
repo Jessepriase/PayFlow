@@ -34,7 +34,7 @@ Use the [quick-reference table](#quick-reference-table) for lookups, then jump t
 | 18   | `ContractPaused`            | State        | Op while protocol paused           |
 | 19   | `IntervalTooShort`          | Validation   | Interval below min floor           |
 | 20   | `BatchTooLarge`             | Limit        | Batch size above max               |
-| 21   | `ZeroBalanceAvailable`      | State        | Merchant withdraw with 0           |
+| 21   | `ZeroBalanceAvailable` (deprecated) | Compatibility | Legacy withdraw code; never emitted |
 | 22   | `MerchantFrozen`            | Auth         | Subscribe to frozen merchant       |
 | 23   | `NoPendingProposal`         | State        | Commit without proposal            |
 | 24   | `SubscriptionAlreadyActive` | State        | Transfer target already subscribed |
@@ -412,20 +412,16 @@ batch. See [`EVENTS.md`](EVENTS.md#batch_charge_skips).
 
 ---
 
-### 21 — `ZeroBalanceAvailable`
+### 21 — `ZeroBalanceAvailable` (legacy)
 
 | Field               | Detail                                                  |
 | ------------------- | ------------------------------------------------------- |
-| **When it occurs**  | `withdraw_merchant_revenue()` with zero accrued balance |
-| **Immediate cause** | Merchant revenue storage is empty/zero                  |
+| **When it occurs**  | Legacy / unused error variant (formerly emitted by `withdraw_merchant_revenue` before migration to non-custodial direct payouts). Kept for discriminant compatibility. |
+| **Immediate cause** | N/A — merchant revenue is non-custodial and settles directly on charge. |
 
 **Recovery steps**
 
-1. Confirm accrued revenue via merchant balance getters.
-2. Wait until successful charges have credited the merchant.
-3. Retry withdraw when balance > 0.
-
-**Prevention:** Disable withdraw CTA when displayed balance is zero.
+1. No action needed; charges settle directly into merchant wallets without withdrawal.
 
 ---
 

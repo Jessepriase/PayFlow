@@ -8264,25 +8264,19 @@ fn test_set_subscription_interval_non_admin_panics() {
 }
 
 // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-// CONTRACT-38: withdraw_merchant_revenue tests
-// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─────────────────────────────────────────────────────────────
+// Merchant revenue direct settlement (non-custodial) tests
+// ─────────────────────────────────────────────────────────────
 
-/// Merchant with accrued revenue can withdraw the full tracked balance.
-/// After withdrawal: token balance increases by the tracked amount and the
-/// revenue counter resets to zero.
+/// Merchant revenue is non-custodial: on charge, funds are transferred
+/// directly from the user to the merchant wallet via SAC transfer_from.
+/// The contract balance remains 0, while get_merchant_revenue records
+/// cumulative earned revenue.
 #[test]
-fn test_withdraw_merchant_revenue_succeeds() {
+fn test_merchant_revenue_settles_directly_non_custodial() {
     let (env, contract_id, token_addr, user, merchant) = setup();
     let client = FlowPayClient::new(&env, &contract_id);
     let token = TokenClient::new(&env, &token_addr);
-    let sac = StellarAssetClient::new(&env, &token_addr);
-
-    // Initialize the global token so withdraw can resolve it.
-    let admin = Address::generate(&env);
-    env.as_contract(&contract_id, || {
-        storage::set_admin(&env, &admin);
-    });
-    client.initialize(&token_addr, &admin);
 
     let amount: i128 = 5_0000000;
     let interval: u64 = 86400;
@@ -8297,55 +8291,35 @@ fn test_withdraw_merchant_revenue_succeeds() {
         &None,
     );
 
+    let merchant_balance_before = token.balance(&merchant);
+    let contract_balance_before = token.balance(&contract_id);
+
     env.ledger().with_mut(|l| {
         l.timestamp += interval + 1;
     });
     client.charge(&user);
 
-    // The tracked revenue equals the net charge (no fee configured in setup).
-    let tracked = client.get_merchant_revenue(&merchant);
-    assert!(tracked > 0, "revenue should be positive after charge");
-
-    // Seed the contract with enough tokens to cover the withdrawal.
-    // In a pooling model the contract would accumulate these from charges
-    // routed through it; here we simulate that by minting directly.
-    sac.mint(&contract_id, &tracked);
-
-    let merchant_balance_before = token.balance(&merchant);
-
-    client.withdraw_merchant_revenue(&merchant);
-
-    // Revenue counter must be reset to zero.
-    assert_eq!(
-        client.get_merchant_revenue(&merchant),
-        0,
-        "revenue counter must be reset after withdrawal"
-    );
-
-    // Merchant token balance must increase by the tracked amount.
+    // Merchant token balance increases immediately by charge amount (no withdraw step required).
     let merchant_balance_after = token.balance(&merchant);
     assert_eq!(
         merchant_balance_after - merchant_balance_before,
-        tracked,
-        "merchant token balance should increase by the withdrawn amount"
+        amount,
+        "merchant should receive funds directly upon charge"
     );
-}
 
-/// Withdrawal with no accrued balance must panic with ZeroBalanceAvailable.
-#[test]
-#[should_panic(expected = "Error(Contract, #21)")]
-fn test_withdraw_merchant_revenue_zero_balance_panics() {
-    let (env, contract_id, token_addr, _user, merchant) = setup();
-    let client = FlowPayClient::new(&env, &contract_id);
+    // Contract holds no merchant funds (non-custodial).
+    let contract_balance_after = token.balance(&contract_id);
+    assert_eq!(
+        contract_balance_after, contract_balance_before,
+        "contract balance must remain unchanged (non-custodial)"
+    );
 
-    let admin = Address::generate(&env);
-    env.as_contract(&contract_id, || {
-        storage::set_admin(&env, &admin);
-    });
-    client.initialize(&token_addr, &admin);
-
-    // No charges have occurred, so revenue is zero.
-    client.withdraw_merchant_revenue(&merchant);
+    // Cumulative revenue counter reflects earned revenue.
+    assert_eq!(
+        client.get_merchant_revenue(&merchant),
+        amount,
+        "revenue counter should match charged amount"
+    );
 }
 
 #[test]

@@ -236,7 +236,8 @@ Get-FileHash contract\target\wasm32-unknown-unknown\release\flow_pay.wasm -Algor
 - [ ] **Testnet smoke test on the same commit**
   - [ ] Deploy/upgrade testnet with this WASM
   - [ ] `subscribe` → wait/advance interval → `charge` / keeper `batch_charge`
-  - [ ] `pause` / `pause_until` / `resume`, merchant withdraw (if applicable)
+  - [ ] `pause` / `pause_until` / `resume`
+  - [ ] Verify direct settlement to merchant wallet on charge
   - [ ] `CONTRACT_ID=<TESTNET_CONTRACT_ID> npx tsx scripts/health-check.ts` exits 0
   - [ ] `soroban contract invoke ... -- contract_health_check` is healthy
 - [ ] **Mainnet SAC address confirmed** — use the Mainnet Stellar Asset Contract for the chosen asset (not Testnet SAC).

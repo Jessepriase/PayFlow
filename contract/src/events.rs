@@ -444,12 +444,6 @@ pub fn publish_subscription_interval_updated(
     );
 }
 
-pub fn publish_merchant_withdrawal(env: &Env, merchant: &Address, amount: i128) {
-    env.events().publish(
-        (Symbol::new(env, "merchant_withdrawal"), merchant.clone()),
-        amount,
-    );
-}
 
 pub fn publish_referred(env: &Env, user: &Address, referrer: &Address) {
     env.events().publish(
