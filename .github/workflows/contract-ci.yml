@@ -1,0 +1,71 @@
+name: Contract CI
+
+# Contract CI runs the Soroban instruction-budget bench gate on every contract
+# change.
+#
+# The benches in `contract/src/bench.rs` measure the CPU instruction cost of
+# the core entry-points (subscribe, charge, pay_per_use, batch_charge). A small
+# refactor can push a contract over a deploy-time instruction budget, and the
+# bench is the only early signal — this job is what stops such a regression from
+# landing silently. Budgets are pinned in `contract/bench-budgets.toml`
+# (baseline + 10% headroom); `contract/scripts/bench-gate.mjs` fails the build
+# and names the entry-point that breached.
+#
+# The bench step is `continue-on-error` on purpose: the gate step reads the
+# captured log so a breach is reported as a named budget violation with the
+# measured cost, rather than a bare test panic.
+
+on:
+  push:
+    branches: ["master"]
+    paths: ["contract/**", ".github/workflows/contract-ci.yml"]
+  pull_request:
+    branches: ["master"]
+    paths: ["contract/**", ".github/workflows/contract-ci.yml"]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: contract-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  bench:
+    name: Bench smoke — instruction budgets
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: contract
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: contract
+
+      - name: Run bench smoke
+        id: bench
+        continue-on-error: true
+        run: |
+          set -o pipefail
+          cargo test --lib bench -- --nocapture --test-threads=1 2>&1 | tee bench.log
+
+      - name: Enforce pinned instruction budgets
+        run: node scripts/bench-gate.mjs --log bench.log
+
+      - name: Upload bench log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: contract-bench-log
+          path: contract/bench.log
+          if-no-files-found: ignore

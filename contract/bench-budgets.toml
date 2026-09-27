@@ -1,0 +1,67 @@
+# FlowPay — pinned Soroban instruction budgets (CI gate)
+#
+# This file is the authoritative budget source for the core contract
+# entry-points. `contract/scripts/bench-gate.mjs` runs the benches defined in
+# `contract/src/bench.rs` with `--nocapture`, parses the measured CPU
+# instruction cost of each bench and fails the build — naming the offending
+# entry-point — as soon as one exceeds the value pinned here.
+#
+# The gate also drift-checks the `MAX_*_INSTRUCTIONS` constants in
+# `contract/src/bench.rs` against this file, so both must be re-pinned in the
+# same commit.
+#
+# Headroom policy
+#   Thresholds are the recorded baseline + 10%. Baselines are measured with
+#   soroban-sdk 21 (soroban-env-host 21.2.1) on ubuntu-latest. Instruction
+#   costs inside the Soroban test env are deterministic for a fixed SDK
+#   version, so the margin only absorbs SDK/toolchain bumps — it is not a
+#   licence to let a bench grow.
+# Re-pin rule
+#   Only with a justification comment on the entry-point: what changed, why the
+#   new cost is the accepted normal, and the date it was re-pinned.
+#   Optimising a bench to get back under its budget is not a re-pin.
+
+[meta]
+sdk = "soroban-sdk 21.0.0"
+soroban_env_host = "21.2.1"
+recorded_on = "2026-09-27"
+headroom = "10% over recorded baseline"
+
+# subscribe() — one user, one merchant, 30-day interval.
+# Cost curve: flat in ledger size; grows linearly with the number of auth
+# entries the call requires (user auth + SAC approve + contract auth).
+# 2026-06-01 baseline 4_200_000 -> 2026-09-27 baseline 4_200_000 (flat).
+[[budget]]
+entrypoint = "subscribe"
+bench = "bench_subscribe"
+const = "MAX_SUBSCRIBE_INSTRUCTIONS"
+max_cpu_instructions = 4_620_000
+
+# charge() — single subscription whose billing interval has elapsed.
+# Cost curve: flat; roughly 0.9x subscribe() because no user auth entry is
+# required. Guarded by bench_charge_vs_subscribe_ratio (3x ceiling).
+# 2026-06-01 baseline 3_800_000 -> 2026-09-27 baseline 3_800_000 (flat).
+[[budget]]
+entrypoint = "charge"
+bench = "bench_charge"
+const = "MAX_CHARGE_INSTRUCTIONS"
+max_cpu_instructions = 4_180_000
+
+# pay_per_use() — metered micro-payment against an active subscription.
+# Cost curve: flat; the metered-amount update is a single storage write.
+# 2026-06-01 baseline 3_600_000 -> 2026-09-27 baseline 3_600_000 (flat).
+[[budget]]
+entrypoint = "pay_per_use"
+bench = "bench_pay_per_use"
+const = "MAX_PAY_PER_USE_INSTRUCTIONS"
+max_cpu_instructions = 3_960_000
+
+# batch_charge() — 10 subscribers, all due, all charged.
+# Cost curve: linear in batch size (~2_800_000 per charged user) because each
+# user costs one storage read + one SAC transfer.
+# 2026-06-01 baseline 28_000_000 -> 2026-09-27 baseline 28_000_000 (flat).
+[[budget]]
+entrypoint = "batch_charge (10 users)"
+bench = "bench_batch_charge_10_users"
+const = "MAX_BATCH_10_INSTRUCTIONS"
+max_cpu_instructions = 30_800_000

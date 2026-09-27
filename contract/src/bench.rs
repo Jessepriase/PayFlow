@@ -27,6 +27,11 @@
 /// Budget baselines were recorded with Soroban SDK 21.0.0 on 2026-06-01.
 /// Each threshold includes ~10% headroom to catch regressions without
 /// failing on minor environment variation.
+///
+/// These constants are enforced in CI by `contract/scripts/bench-gate.mjs`
+/// against the pinned budgets in `contract/bench-budgets.toml`, which also
+/// drift-checks the values below. Re-pin the constant and the config entry in
+/// the same commit; each budget carries a justification comment there.
 pub const MAX_SUBSCRIBE_INSTRUCTIONS: u64 = 4_620_000;
 pub const MAX_CHARGE_INSTRUCTIONS: u64 = 4_180_000;
 pub const MAX_PAY_PER_USE_INSTRUCTIONS: u64 = 3_960_000;
@@ -92,6 +97,8 @@ fn add_funded_user(env: &Env, contract_id: &Address, token_addr: &Address) -> Ad
 /// Baseline (2026-06-01):
 ///   CPU Instructions : ~4_200_000
 ///   Memory Bytes     : ~200_000
+/// Budget: 4_620_000 (+10%). Cost curve is flat in ledger size and linear in
+/// the number of auth entries the call needs.
 #[test]
 fn bench_subscribe() {
     let (env, contract_id, token_addr, user, merchant) = bench_setup();
@@ -142,6 +149,8 @@ fn bench_subscribe() {
 /// Baseline (2026-06-01):
 ///   CPU Instructions : ~3_800_000
 ///   Memory Bytes     : ~180_000
+/// Budget: 4_180_000 (+10%). Flat cost curve; roughly 0.9x `subscribe()` as no
+/// user auth entry is required.
 #[test]
 fn bench_charge() {
     let (env, contract_id, token_addr, user, merchant) = bench_setup();
@@ -199,6 +208,8 @@ fn bench_charge() {
 /// Baseline (2026-06-01):
 ///   CPU Instructions : ~3_600_000
 ///   Memory Bytes     : ~170_000
+/// Budget: 3_960_000 (+10%). Flat cost curve; the metered-amount update is a
+/// single storage write.
 #[test]
 fn bench_pay_per_use() {
     let (env, contract_id, token_addr, user, merchant) = bench_setup();
@@ -249,6 +260,8 @@ fn bench_pay_per_use() {
 /// Baseline (2026-06-01):
 ///   CPU Instructions : ~28_000_000
 ///   Memory Bytes     : ~1_200_000
+/// Budget: 30_800_000 (+10%). Cost curve is linear in batch size
+/// (~2_800_000 per charged user: one storage read + one SAC transfer).
 #[test]
 fn bench_batch_charge_10_users() {
     let (env, contract_id, token_addr, first_user, merchant) = bench_setup();
@@ -379,6 +392,12 @@ fn bench_charge_vs_subscribe_ratio() {
     );
 }
 
+/// Measures the instruction cost of `get_top_merchants_by_subs(10)` over a
+/// seeded 15-merchant index. Reported only — no pinned budget yet, because the
+/// scan-based implementation is being replaced by a bounded scan (see the
+/// bounded-scan issues). It becomes a gated core entry-point once that lands:
+/// add the constant here and a `[[budget]]` block in
+/// `contract/bench-budgets.toml` with a recorded baseline.
 #[test]
 fn bench_get_top_merchants_by_subs_large_index() {
     let (env, contract_id, token_addr, _, _) = bench_setup();
