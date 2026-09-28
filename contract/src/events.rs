@@ -1,4 +1,4 @@
-use soroban_sdk::{Address, BytesN, Env, Symbol};
+use soroban_sdk::{Address, BytesN, Env, String, Symbol};
 
 use crate::Subscription;
 
@@ -566,4 +566,57 @@ pub fn publish_max_whitelist_batch_size_set(env: &Env, old: u32, new: u32) {
         .publish((Symbol::new(env, "max_wl_batch_size_set"),), (old, new));
 }
 
+pub fn publish_cancelled(env: &Env, user: &Address) {
+    env.events().publish(
+        (Symbol::new(env, "cancelled"), user.clone()),
+        CancelledEventData {
+            ledger_sequence: env.ledger().sequence(),
+        },
+    );
+}
 
+pub fn publish_cancelled_with_refund(env: &Env, user: &Address, refund_amount: i128) {
+    env.events().publish(
+        (Symbol::new(env, "cancelled_with_refund"), user.clone()),
+        CancelledWithRefundEventData {
+            refund_amount,
+            ledger_sequence: env.ledger().sequence(),
+        },
+    );
+}
+
+pub fn publish_pay_per_use(env: &Env, user: &Address, merchant: &Address, amount: i128) {
+    env.events().publish(
+        (Symbol::new(env, "pay_per_use"), user.clone()),
+        PayPerUseEventData {
+            merchant: merchant.clone(),
+            amount,
+            ledger_sequence: env.ledger().sequence(),
+        },
+    );
+}
+
+
+
+/// Publishes `metadata_set` event — called from `subscription_metadata::set_metadata`.
+pub fn metadata_set(env: &Env, user: &Address, label: &String) {
+    env.events().publish(
+        (Symbol::new(env, "metadata_set"), user.clone()),
+        label.clone(),
+    );
+}
+
+/// Publishes `metadata_cleared` event — called from `subscription_metadata::clear_metadata`.
+pub fn metadata_cleared(env: &Env, user: &Address) {
+    env.events().publish(
+        (Symbol::new(env, "metadata_cleared"), user.clone()),
+        user.clone(),
+    );
+}
+
+pub fn publish_merchant_withdrawal(env: &Env, merchant: &Address, amount: i128) {
+    env.events().publish(
+        (Symbol::new(env, "merchant_withdrawal"), merchant.clone()),
+        amount,
+    );
+}

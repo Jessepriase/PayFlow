@@ -204,6 +204,24 @@ pub fn batch_cancel(env: &Env, users: Vec<Address>) -> Vec<CancelResult> {
     let mut results: Vec<CancelResult> = Vec::new(env);
 
     for user in users.iter() {
-        let key = DataKey::Subscr
+        let key = DataKey::Subscription(user.clone());
+        let sub_opt: Option<Subscription> = env.storage().persistent().get(&key);
 
-/* … truncated 592 chars — edit only what you need near the top … */
+        let result = match sub_opt {
+            None => CancelResult::NoSubscription,
+            Some(sub) => {
+                if !sub.active {
+                    CancelResult::AlreadyCancelled
+                } else {
+                    crate::cancel_inner(env, &user);
+                    crate::events::publish_cancelled(env, &user);
+                    CancelResult::Cancelled
+                }
+            }
+        };
+
+        results.push_back(result);
+    }
+
+    results
+}

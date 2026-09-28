@@ -9,6 +9,12 @@ pub fn get_subscription(env: &Env, user: &Address) -> Option<Subscription> {
         .get(&DataKey::Subscription(user.clone()))
 }
 
+pub fn set_subscription(env: &Env, user: &Address, sub: &Subscription) {
+    env.storage()
+        .persistent()
+        .set(&DataKey::Subscription(user.clone()), sub);
+}
+
 /// Extends the TTL of a subscription entry and, when present, its
 /// associated `PauseExpiry` key. Keeping both entries alive is
 /// critical: if PauseExpiry archives while the subscription survives,
@@ -32,6 +38,10 @@ pub fn extend_subscription_ttl(env: &Env, user: &Address) {
             SUBSCRIPTION_TTL_LEDGERS,
         );
     }
+}
+
+pub fn set_token(env: &Env, token: &Address) {
+    env.storage().instance().set(&DataKey::Token, token);
 }
 
 pub fn get_token(env: &Env) -> Option<Address> {

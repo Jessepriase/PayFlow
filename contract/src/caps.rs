@@ -73,3 +73,12 @@ pub fn effective_page_size(requested: Option<u32>, cap: u32) -> u32 {
         None => cap,
     }
 }
+
+/// Returns the effective max batch size from instance storage, defaulting to
+/// `DEFAULT_BATCH_SIZE` when no override has been configured.
+pub fn get_max_batch_size(env: &soroban_sdk::Env) -> u32 {
+    env.storage()
+        .instance()
+        .get(&crate::DataKey::MaxBatchSize)
+        .unwrap_or(DEFAULT_BATCH_SIZE)
+}
