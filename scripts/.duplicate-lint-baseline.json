@@ -9,6 +9,7 @@
     "subscription-snapshot.ts",
     "test-churn-analysis.ts",
     "test-dlq.ts",
-    "testnet-setup.ts"
+    "testnet-setup.ts",
+    "top-merchants.ts"
   ]
 }
