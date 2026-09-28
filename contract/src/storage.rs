@@ -9,6 +9,17 @@ pub fn get_subscription(env: &Env, user: &Address) -> Option<Subscription> {
         .get(&DataKey::Subscription(user.clone()))
 }
 
+/// Overwrites the stored subscription entry for `user`.
+///
+/// Callers that mutate a subscription in place (e.g. trial extension) write the
+/// whole struct back through here so the storage key layout stays owned by this
+/// module.
+pub fn set_subscription(env: &Env, user: &Address, sub: &Subscription) {
+    env.storage()
+        .persistent()
+        .set(&DataKey::Subscription(user.clone()), sub);
+}
+
 /// Extends the TTL of a subscription entry and, when present, its
 /// associated `PauseExpiry` key. Keeping both entries alive is
 /// critical: if PauseExpiry archives while the subscription survives,
@@ -60,6 +71,11 @@ pub fn get_admin_optional(env: &Env) -> Option<Address> {
 
 pub fn set_admin(env: &Env, admin: &Address) {
     env.storage().instance().set(&DataKey::Admin, admin);
+}
+
+/// Overwrites the stored default SAC token address.
+pub fn set_token(env: &Env, token: &Address) {
+    env.storage().instance().set(&DataKey::Token, token);
 }
 
 pub fn is_contract_paused(env: &Env) -> bool {

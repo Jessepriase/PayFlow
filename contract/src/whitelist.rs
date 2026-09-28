@@ -222,4 +222,25 @@ pub fn freeze(env: &Env, merchant: &Address, reason: Option<soroban_sdk::String>
 ///
 /// # Idempotency (Issue #820)
 ///
-/// If the merchant is n
+/// If the merchant is not currently frozen, this is a no-op: no storage is
+/// modified and no event is emitted. This prevents event spam when
+/// keepers or admin scripts retry unfreeze calls.
+pub fn unfreeze(env: &Env, merchant: &Address) {
+    if !is_frozen(env, merchant) {
+        return;
+    }
+
+    env.storage()
+        .persistent()
+        .remove(&DataKey::MerchantFrozen(merchant.clone()));
+    env.storage()
+        .persistent()
+        .remove(&DataKey::MerchantFreezeReason(merchant.clone()));
+    events::publish_merchant_unfrozen(env, merchant);
+}
+
+pub fn get_freeze_reason(env: &Env, merchant: &Address) -> Option<soroban_sdk::String> {
+    env.storage()
+        .persistent()
+        .get(&DataKey::MerchantFreezeReason(merchant.clone()))
+}

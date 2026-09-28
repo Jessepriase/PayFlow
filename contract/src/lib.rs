@@ -19,8 +19,7 @@ mod charge_exec;
 mod errors;
 mod events;
 mod fee;
-mod grace;
-mod merchant_stats;
+mod grace;mod merchant_stats;
 mod migration;
 mod min_interval;
 mod referral;
@@ -264,15 +263,27 @@ pub(crate) fn cancel_inner(env: &Env, user: &Address) -> Subscription {
         .get(&key)
         .unwrap_or_else(|| env.panic_with_error(ContractError::NoSubscriptionFound));
 
+    // Counters only move on the active -> inactive edge. Cancelling an
+    // already-cancelled subscription is a no-op: without this guard a second
+    // `cancel` decrements `ActiveCount` and the per-merchant subscriber count
+    // again. The decrement helpers floor at 0, so a double cancel on a
+    // single-subscriber contract looks correct and hides the under-count until
+    // a second subscriber exists — the protocol then reports fewer active
+    // subscribers than it has, and keepers skip live subscriptions.
+    // `batch_cancel` already guards this by reporting `AlreadyCancelled`
+    // without calling `cancel_inner`; the single-call path now matches it.
+    let was_active = sub.active;
     sub.active = false;
 
     env.storage().persistent().set(&key, &sub);
     extend_subscription_ttl(env, user);
 
-    subscription_count::decrement(env);
-    subscription_count::remove_subscriber_index(env, user);
-    merchant_stats::decrement_subscriber_count(env, &sub.merchant);
-    referral::remove_referral(env, user);
+    if was_active {
+        subscription_count::decrement(env);
+        subscription_count::remove_subscriber_index(env, user);
+        merchant_stats::decrement_subscriber_count(env, &sub.merchant);
+        referral::remove_referral(env, user);
+    }
 
     sub
 }
@@ -972,7 +983,9 @@ impl FlowPay {
     ///
     /// Requires authorization from the pending (new) admin.
     pub fn accept_admin(env: Env) {
-        admin::accept_admin(&env);
+        if let Err(err) = admin::accept_admin(&env) {
+            env.panic_with_error(err);
+        }
     }
 
     /// Returns the proposed admin address awaiting `accept_admin()`, or

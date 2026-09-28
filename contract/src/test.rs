@@ -5431,15 +5431,13 @@ fn test_health_check_pending_merchant_revenue_counter() {
     let report2 = client.contract_health_check();
     assert_eq!(report2.pending_merchant_rev_count, 2);
 
-    // Withdraw merchant1's revenue (mint contract_id balance first so transfer succeeds)
-    sac.mint(&contract_id, &1000);
-    client.withdraw_merchant_revenue(&merchant1);
+    // Merchant revenue is non-custodial: there is no withdrawal to perform, the
+    // admin resets the cumulative counter once the merchant has settled off-chain.
+    client.reset_merchant_revenue(&merchant1);
     let report3 = client.contract_health_check();
     assert_eq!(report3.pending_merchant_rev_count, 1);
 
-    // Withdraw merchant2's revenue
-    sac.mint(&contract_id, &1000);
-    client.withdraw_merchant_revenue(&merchant2);
+    client.reset_merchant_revenue(&merchant2);
     let report4 = client.contract_health_check();
     assert_eq!(report4.pending_merchant_rev_count, 0);
 }
@@ -9995,7 +9993,9 @@ fn test_contract_config() {
     client.initialize(&token_addr, &admin);
 
     let config = client.get_contract_config();
-    assert_eq!(config.schema_version, 1);
+    // A fresh deployment starts at CURRENT_VERSION, not at 1: initialize() stamps
+    // the current schema so migration is never required on new deploys.
+    assert_eq!(config.schema_version, crate::migration::CURRENT_VERSION);
     assert_eq!(config.paused, false);
 }
 
