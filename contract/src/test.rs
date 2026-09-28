@@ -10959,6 +10959,146 @@ fn test_merchant_fee_recipient_routing_and_fallback() {
     assert_eq!(token.balance(&merchant), 1980);
 }
 
+// ─────────────────────────────────────────────────────────────
+// Issue #1012: MerchantFeeRecipient TTL durability tests
+// ─────────────────────────────────────────────────────────────
+
+/// Scenario: archival-before-charge
+/// The merchant sets a custom fee recipient, then the ledger advances well
+/// past the naive minimum TTL that would apply without an explicit extension.
+/// The charge must still route fees to the custom recipient — proving that
+/// set_merchant_fee_recipient bumps the TTL on write.
+#[test]
+fn test_merchant_fee_recipient_survives_archival_before_charge() {
+    let (env, contract_id, token_addr, user, merchant) = setup();
+    let client = FlowPayClient::new(&env, &contract_id);
+    let token = TokenClient::new(&env, &token_addr);
+
+    let admin = Address::generate(&env);
+    env.as_contract(&contract_id, || {
+        storage::set_admin(&env, &admin);
+    });
+
+    let global_collector = Address::generate(&env);
+    client.propose_fee(&global_collector, &500); // 5%
+    client.commit_fee();
+
+    let custom_recipient = Address::generate(&env);
+    // set_merchant_fee_recipient must extend TTL to SUBSCRIPTION_TTL_LEDGERS
+    client.set_merchant_fee_recipient(&merchant, &custom_recipient);
+
+    let interval: u64 = 86400;
+    client.subscribe(&user, &merchant, &1000, &interval, &token_addr, &None, &None);
+
+    // Advance ledger sequence past what would be the minimum TTL if no
+    // extension had been applied (simulate near-expiry without archival).
+    // SUBSCRIPTION_TTL_LEDGERS / 2 + 1 is the threshold: the entry would
+    // have archived if written with the default minimum TTL.
+    env.ledger().with_mut(|l| {
+        l.sequence_number += SUBSCRIPTION_TTL_LEDGERS / 2 + 1;
+        l.timestamp += interval + 1;
+    });
+
+    let recipient_before = token.balance(&custom_recipient);
+    let global_before = token.balance(&global_collector);
+
+    client.charge(&user);
+
+    // Fee (5% of 1000 = 50) goes to custom_recipient, NOT global_collector
+    assert_eq!(token.balance(&custom_recipient) - recipient_before, 50);
+    assert_eq!(token.balance(&global_collector) - global_before, 0);
+}
+
+/// Scenario: archival-mid-config
+/// The merchant sets a custom fee recipient. A first charge extends the TTL
+/// on read. A second charge, after another large ledger gap, must still route
+/// to the custom recipient — proving that get_merchant_fee_recipient re-bumps
+/// the TTL on every charge so a configured recipient cannot lapse during
+/// steady-state operation.
+#[test]
+fn test_merchant_fee_recipient_ttl_refreshed_on_charge() {
+    let (env, contract_id, token_addr, user, merchant) = setup();
+    let client = FlowPayClient::new(&env, &contract_id);
+    let token = TokenClient::new(&env, &token_addr);
+
+    let admin = Address::generate(&env);
+    env.as_contract(&contract_id, || {
+        storage::set_admin(&env, &admin);
+    });
+
+    let global_collector = Address::generate(&env);
+    client.propose_fee(&global_collector, &500); // 5%
+    client.commit_fee();
+
+    let custom_recipient = Address::generate(&env);
+    client.set_merchant_fee_recipient(&merchant, &custom_recipient);
+
+    let interval: u64 = 86400;
+    client.subscribe(&user, &merchant, &1000, &interval, &token_addr, &None, &None);
+
+    // First charge: advances past half-TTL threshold so the read-time extend
+    // is meaningful (it resets the TTL clock from this point forward).
+    env.ledger().with_mut(|l| {
+        l.sequence_number += SUBSCRIPTION_TTL_LEDGERS / 2 + 1;
+        l.timestamp += interval + 1;
+    });
+
+    client.charge(&user); // read-time TTL bump happens here
+
+    // Second charge: another large ledger gap after the first charge's bump.
+    // If get_merchant_fee_recipient hadn't re-extended, the entry would now
+    // be past the original TTL and the key would have been archived.
+    env.ledger().with_mut(|l| {
+        l.sequence_number += SUBSCRIPTION_TTL_LEDGERS / 2 + 1;
+        l.timestamp += interval + 1;
+    });
+
+    let recipient_before = token.balance(&custom_recipient);
+    let global_before = token.balance(&global_collector);
+
+    client.charge(&user);
+
+    // Fee on second charge must still reach custom_recipient
+    assert_eq!(token.balance(&custom_recipient) - recipient_before, 50);
+    assert_eq!(token.balance(&global_collector) - global_before, 0);
+}
+
+/// Global fallback still applies when no custom recipient is configured.
+/// This ensures TTL extension in the write path doesn't interfere with the
+/// fee-routing resolution order (custom over global).
+#[test]
+fn test_merchant_fee_recipient_global_fallback_when_not_configured() {
+    let (env, contract_id, token_addr, user, merchant) = setup();
+    let client = FlowPayClient::new(&env, &contract_id);
+    let token = TokenClient::new(&env, &token_addr);
+
+    let admin = Address::generate(&env);
+    env.as_contract(&contract_id, || {
+        storage::set_admin(&env, &admin);
+    });
+
+    let global_collector = Address::generate(&env);
+    client.propose_fee(&global_collector, &500); // 5%
+    client.commit_fee();
+
+    // No custom recipient set for this merchant
+    let interval: u64 = 86400;
+    client.subscribe(&user, &merchant, &1000, &interval, &token_addr, &None, &None);
+
+    env.ledger().with_mut(|l| {
+        l.timestamp += interval + 1;
+    });
+
+    let global_before = token.balance(&global_collector);
+    let merchant_before = token.balance(&merchant);
+
+    client.charge(&user);
+
+    // Full fee goes to global_collector; merchant gets net
+    assert_eq!(token.balance(&global_collector) - global_before, 50);
+    assert_eq!(token.balance(&merchant) - merchant_before, 950);
+}
+
 #[test]
 #[should_panic(expected = "Error(Contract, #20)")]
 fn test_get_merchant_statuses_exceeds_limit_panics() {
