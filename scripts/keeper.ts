@@ -767,8 +767,8 @@ async function processPageLive(
     result.errors.push(`Page ${pageOffset}: ${errorStr}`);
     let ledgerSeq: number | undefined;
     try {
-      const { last_ledger } = await server.getFeeStats();
-      ledgerSeq = last_ledger;
+      const { latestLedger } = await server.getFeeStats();
+      ledgerSeq = latestLedger;
     } catch {
       // ignore
     }

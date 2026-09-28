@@ -131,8 +131,8 @@ export async function rotateFeeCollector(argv: string[], ctx: RotateContext = de
         }],
         limit: 10
       });
-      if (response && response.records && response.records.length > 0) {
-        const latestEvent = response.records[response.records.length - 1];
+      if (response && response.events && response.events.length > 0) {
+        const latestEvent = response.events[response.events.length - 1];
         logger.info(`Found fee_proposed event in ledger ${latestEvent.ledger}`);
       }
     } catch (e) {
