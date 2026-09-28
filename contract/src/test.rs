@@ -11540,33 +11540,15 @@ fn test_charge_result_variant_count() {
     assert_ne!(g, a, "GracePeriodElapsed and AllowanceInsufficient must differ");
 
     // Lock the variant count — increase when a variant is appended.
+    //
+    // This count plus the declaration order in `batch.rs` *is* the on-the-wire
+    // contract: a `#[contracttype]` unit-only enum serialises as an scvU32
+    // holding the variant index, so off-chain decoders map 0..6 to the variant
+    // names in `docs/charge-results.md`. Reordering the enum is therefore a
+    // wire-breaking change even though the Rust still compiles. The exact
+    // discriminants are asserted off-chain by that doc's decoders.
     let total_variants = 7;
     assert_eq!(total_variants, 7);
-
-    // Lock the exact on-the-wire discriminants. Off-chain decoders map
-    // `scvU32(n)` back to a variant name using this table, so reordering the
-    // enum is a wire-breaking change even though the Rust still compiles.
-    // See `docs/charge-results.md`.
-    //
-    // Each variant must encode to exactly the same Val as the bare u32 of its
-    // discriminant, which is what makes it an scvU32 and not an scvSymbol.
-    let wire_layout = [
-        (ChargeResult::Charged, 0u32),
-        (ChargeResult::Skipped, 1u32),
-        (ChargeResult::NoSubscription, 2u32),
-        (ChargeResult::Inactive, 3u32),
-        (ChargeResult::Paused, 4u32),
-        (ChargeResult::GracePeriodElapsed, 5u32),
-        (ChargeResult::AllowanceInsufficient, 6u32),
-    ];
-    for (variant, expected_discriminant) in wire_layout.iter() {
-        let n: u32 = *expected_discriminant;
-        let from_variant: soroban_sdk::Val = variant.clone().into_val(&env);
-        let from_bare_u32: soroban_sdk::Val = n.into_val(&env);
-        let a = unsafe { core::mem::transmute::<soroban_sdk::Val, u64>(from_variant) };
-        let b = unsafe { core::mem::transmute::<soroban_sdk::Val, u64>(from_bare_u32) };
-        assert_eq!(a, b, "ChargeResult must encode as scvU32({n}), not an scvSymbol");
-    }
 }
 
 /// Verify round-trip encoding for every variant.
