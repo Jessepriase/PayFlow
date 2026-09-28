@@ -6,7 +6,8 @@
 //!
 //! The operator-facing table built from these constants lives in
 //! `docs/limits.md`. If you change a value here, update that table in the
-//! same commit.
+//! same commit; `node scripts/emit-caps-table.mjs --check` fails the build's
+//! doc check if the two disagree.
 //!
 //! These values are re-exported at the crate root (`crate::MAX_BATCH_SIZE`,
 //! `crate::MAX_BATCH_SIZE_CEILING`, ...) so entrypoints can keep using the
