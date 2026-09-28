@@ -927,10 +927,34 @@ This ops guide does not reproduce those playbooks:
 | RPC failover (runbook)            | Same file, section “RPC Failover Configuration”                                                                    |
 | TS DLQ replay helper              | [`replay-dlq.ts`](replay-dlq.ts) (default `DLQ_FILE=dlq/failed-batches.jsonl`)                                     |
 | Event backfill                    | [`docs/EVENT-DRIVEN-GUIDE.md`](../docs/EVENT-DRIVEN-GUIDE.md), [`replay-events.ts`](replay-events.ts)              |
+| **Charge outcome encoding**       | **[`docs/charge-results.md`](../docs/charge-results.md)** - `scvU32` discriminants, event `scvSymbol` keys, DLQ row schema, `null` vs failure |
 | Multi-endpoint RPC helper         | [`rpc-client.ts`](rpc-client.ts) (`RPC_URLS`) — **not** imported by the current keeper/indexer entrypoints         |
 
 `replay-dlq.ts` states that `keeper.ts` writes the JSONL DLQ. Confirm that path
 against the keeper you actually run before relying on it in production.
+
+### Reading charge outcomes
+
+If you are building anything that needs to know *which subscribers were charged*,
+read [`docs/charge-results.md`](../docs/charge-results.md) first. The short
+version, because it is easy to get wrong:
+
+- `batch_charge` returns a `Vec<ChargeResult>` where **each element is an
+  `scvU32` holding a variant discriminant 0-6** - *not* an `scvSymbol` and not
+  a string. Map `0..6` to `Charged`, `Skipped`, `NoSubscription`, `Inactive`,
+  `Paused`, `GracePeriodElapsed`, `AllowanceInsufficient`.
+- `scvSymbol` appears only in the `batch_charge_skips` event: as `topics[0]`, and
+  as the keys of the event's `scvMap` (snake_case field names such as
+  `not_due` and `allowance_insufficient`).
+- A DLQ row records a **transaction-level** abort. It carries no per-subscriber
+  outcome, `tx_xdr` is always `null`, and `error` is free-form text.
+- `AllowanceInsufficient` is a successful transaction that transferred nothing
+  for one subscriber. It never reaches the DLQ, so alerting on it has to come
+  from the event.
+
+The doc also carries drop-in TypeScript and Python decoders, a worked XDR
+example with hex and base64, and a list of the in-repo decoders that currently
+assume the wrong encoding.
 
 ---
 
@@ -941,6 +965,15 @@ Out of scope for this ops-guide revision. Existing helpers include (non-exhausti
 `health-check.ts`, `subscription-snapshot.ts`, `daily-revenue-summary.ts`,
 `export-merchant-report.ts`, `pre-upgrade-check.ts`, `snapshot-diff.ts`,
 `deploy-pipeline.ts`, `replay-dlq.ts`, `replay-events.ts`.
+
+**Adding a charge-outcome column to an export?** The report scripts read the
+indexer's stored events, so they work from the `batch_charge_skips` aggregate
+rather than from per-subscriber results. If you need per-subscriber outcomes,
+read the return value, and get the encoding right:
+[`docs/charge-results.md`](../docs/charge-results.md). The two spellings of the
+same outcome differ (`Charged` vs `charged`, `Skipped` vs `not_due`), and mixing
+them up is the usual cause of an export that reports every subscriber as
+unpaid.
 
 ### Daily revenue delivery
 

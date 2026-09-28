@@ -31,6 +31,20 @@
  * ──────────
  *   0 — all entries replayed (or DLQ empty, or --dry-run)
  *   1 — one or more entries could not be replayed (moved to dead-batches.jsonl)
+ *
+ * DLQ row schema
+ * ──────────────
+ *   Each line of the JSONL file is:
+ *   { timestamp, offset, limit, users, error, tx_xdr, attempts, ledger }
+ *
+ *   A row records that a *transaction* aborted. It carries no per-subscriber
+ *   charge outcome: `tx_xdr` is always null (replay rebuilds the transaction
+ *   from `users`), and `error` is free-form text. A batch that succeeded while
+ *   leaving one subscriber unpaid -- `ChargeResult::AllowanceInsufficient` --
+ *   is not a DLQ entry at all.
+ *
+ *   See docs/charge-results.md for the full outcome encoding, including the
+ *   `scvU32` discriminants this script's `parseChargeResults` is meant to read.
  */
 
 import {
