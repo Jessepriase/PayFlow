@@ -19,7 +19,7 @@ pub fn set_metadata(env: &Env, user: &Address, label: String) -> Result<(), Cont
         SUBSCRIPTION_TTL_LEDGERS,
         SUBSCRIPTION_TTL_LEDGERS,
     );
-    events::metadata_set(env, user, &label);
+    events::publish_metadata_set(env, user, &label);
     Ok(())
 }
 
@@ -35,5 +35,5 @@ pub fn clear_metadata(env: &Env, user: &Address) {
     env.storage()
         .persistent()
         .remove(&DataKey::SubscriptionMeta(user.clone()));
-    events::metadata_cleared(env, user);
+    events::publish_metadata_cleared(env, user);
 }

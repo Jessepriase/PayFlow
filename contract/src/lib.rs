@@ -970,7 +970,9 @@ impl FlowPay {
     ///
     /// Requires authorization from the pending (new) admin.
     pub fn accept_admin(env: Env) {
-        admin::accept_admin(&env);
+        if let Err(err) = admin::accept_admin(&env) {
+            env.panic_with_error(err);
+        }
     }
 
     /// Returns the proposed admin address awaiting `accept_admin()`, or
