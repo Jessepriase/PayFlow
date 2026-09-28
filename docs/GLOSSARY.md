@@ -50,7 +50,7 @@ Source: `contract/src/batch.rs`, [`charge-results.md`](./charge-results.md).
 | `GracePeriodElapsed` | Charge window closed after grace period |
 | `AllowanceInsufficient` | Token allowance below gross `sub.amount`; subscription stays active |
 
-Canonical table: [`KEEPER.md`](./KEEPER.md#how-it-works). Type definition: `contract/src/batch.rs`.
+Canonical table: [`KEEPER.md`](./KEEPER.md#how-a-cycle-works). Type definition: `contract/src/batch.rs`.
 
 ### ChargeSimResult
 
