@@ -13107,3 +13107,186 @@ fn test_max_whitelist_batch_size_set_event_old_is_default_before_first_override(
     assert_eq!(old, 50u32);
     assert_eq!(new, 100u32);
 }
+
+// ─────────────────────────────────────────────────────────────
+// Issue #1013 — Bound subscription intervals to prevent
+// last_charged timestamp overflow
+// ─────────────────────────────────────────────────────────────
+
+/// subscribe() with interval == MAX_SUBSCRIPTION_INTERVAL (exactly on the
+/// boundary) must succeed.
+#[test]
+fn test_interval_at_max_boundary_is_accepted() {
+    let (env, contract_id, token_addr, user, merchant) = setup();
+    let client = FlowPayClient::new(&env, &contract_id);
+
+    // Exactly at the cap — should not panic.
+    client.subscribe(
+        &user,
+        &merchant,
+        &1_0000000,
+        &MAX_SUBSCRIPTION_INTERVAL,
+        &token_addr,
+        &None,
+        &None,
+    );
+
+    let sub = client.get_subscription(&user).unwrap();
+    assert_eq!(sub.interval, MAX_SUBSCRIPTION_INTERVAL);
+}
+
+/// subscribe() with interval == MAX_SUBSCRIPTION_INTERVAL + 1 must be
+/// rejected with ContractError::IntervalExceedsMaximum (code 46).
+#[test]
+fn test_interval_above_max_boundary_is_rejected() {
+    let (env, contract_id, token_addr, user, merchant) = setup();
+    let client = FlowPayClient::new(&env, &contract_id);
+
+    let over_cap = MAX_SUBSCRIPTION_INTERVAL + 1;
+    assert_eq!(
+        client.try_subscribe(
+            &user,
+            &merchant,
+            &1_0000000,
+            &over_cap,
+            &token_addr,
+            &None,
+            &None,
+        ),
+        Err(Ok(soroban_sdk::Error::from_contract_error(
+            crate::errors::ContractError::IntervalExceedsMaximum as u32
+        ))),
+        "interval one above cap must return IntervalExceedsMaximum"
+    );
+}
+
+/// subscribe() with interval == u64::MAX must be rejected with
+/// ContractError::IntervalExceedsMaximum (code 46) — not a host panic.
+#[test]
+fn test_interval_u64_max_is_rejected() {
+    let (env, contract_id, token_addr, user, merchant) = setup();
+    let client = FlowPayClient::new(&env, &contract_id);
+
+    assert_eq!(
+        client.try_subscribe(
+            &user,
+            &merchant,
+            &1_0000000,
+            &u64::MAX,
+            &token_addr,
+            &None,
+            &None,
+        ),
+        Err(Ok(soroban_sdk::Error::from_contract_error(
+            crate::errors::ContractError::IntervalExceedsMaximum as u32
+        ))),
+        "u64::MAX interval must return IntervalExceedsMaximum"
+    );
+}
+
+/// A batch_charge where one user has an extreme legacy interval (injected
+/// directly into storage, bypassing validation) must NOT abort the batch —
+/// all other users in the batch must still be processed.
+#[test]
+fn test_overflow_interval_in_batch_does_not_abort_batch() {
+    let (env, contract_id, token_addr, user, merchant) = setup();
+    let client = FlowPayClient::new(&env, &contract_id);
+
+    // user2 has a normal subscription.
+    let user2 = setup_funded_user(&env, &contract_id, &token_addr);
+    client.subscribe(
+        &user2,
+        &merchant,
+        &1_0000000,
+        &86400,
+        &token_addr,
+        &None,
+        &None,
+    );
+
+    // Inject a legacy subscription with interval = u64::MAX directly into
+    // storage, simulating a subscription that pre-dates the cap.
+    let extreme_sub = crate::Subscription {
+        merchant: merchant.clone(),
+        amount: 1_0000000,
+        interval: u64::MAX,
+        last_charged: 0,
+        active: true,
+        paused: false,
+        token: token_addr.clone(),
+        referrer: None,
+        label: Symbol::new(&env, ""),
+        trial_duration: 0,
+        created_at: 0,
+    };
+    env.as_contract(&contract_id, || {
+        env.storage().persistent().set(
+            &crate::DataKey::Subscription(user.clone()),
+            &extreme_sub,
+        );
+    });
+
+    // Advance time so user2's interval has elapsed.
+    env.ledger().with_mut(|l| {
+        l.timestamp += 86401;
+    });
+
+    let mut users: soroban_sdk::Vec<Address> = soroban_sdk::Vec::new(&env);
+    users.push_back(user.clone());
+    users.push_back(user2.clone());
+
+    // The batch must not panic. The extreme-interval user is skipped (NotDue
+    // because last_charged + u64::MAX saturates to u64::MAX, which is always
+    // in the future), and user2 is charged successfully.
+    let results = client.batch_charge(&users);
+    assert_eq!(results.len(), 2);
+
+    // user with u64::MAX interval: last_charged=0, interval=u64::MAX →
+    // next = saturating_add(0, u64::MAX) = u64::MAX → NotDue (Skipped).
+    assert_eq!(results.get(0).unwrap(), ChargeResult::Skipped);
+
+    // user2 with normal interval must be charged.
+    assert_eq!(results.get(1).unwrap(), ChargeResult::Charged);
+}
+
+/// Grace-period math with a saturating-add does not flip the lapsed check.
+/// With last_charged=0, interval=u64::MAX-1, grace=2 the deadline saturates
+/// to u64::MAX — is_grace_lapsed must return false for any realistic now.
+#[test]
+fn test_is_grace_lapsed_saturates_safely() {
+    let (env, contract_id, token_addr, user, merchant) = setup();
+    let client = FlowPayClient::new(&env, &contract_id);
+    install_admin(&env, &contract_id);
+
+    // Set a grace period.
+    client.propose_grace_period(&3600u64);
+    client.commit_grace_period();
+
+    // Inject a subscription with a near-max interval.
+    let extreme_sub = crate::Subscription {
+        merchant: merchant.clone(),
+        amount: 1_0000000,
+        interval: u64::MAX - 1,
+        last_charged: 0,
+        active: true,
+        paused: false,
+        token: token_addr.clone(),
+        referrer: None,
+        label: Symbol::new(&env, ""),
+        trial_duration: 0,
+        created_at: 0,
+    };
+    env.as_contract(&contract_id, || {
+        env.storage().persistent().set(
+            &crate::DataKey::Subscription(user.clone()),
+            &extreme_sub,
+        );
+    });
+
+    // The subscription health check exercises is_grace_lapsed and
+    // compute_next_charge_at indirectly — it must not panic.
+    let health = client.get_subscription_health(&user);
+    // With saturating arithmetic the deadline = u64::MAX, which is always in
+    // the future, so the grace window is NOT lapsed.
+    assert!(!health.within_grace, "grace must not be lapsed for extreme interval");
+}

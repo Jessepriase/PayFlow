@@ -146,7 +146,7 @@ pub(crate) fn dry_run_skip_precheck(
     }
 
     let grace_period = grace::get_grace_period(env);
-    if grace_period > 0 && now > next + grace_period {
+    if grace_period > 0 && now > next.saturating_add(grace_period) {
         return (DryRunSkipOutcome::GracePeriodElapsed, None);
     }
 

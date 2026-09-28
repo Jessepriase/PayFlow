@@ -157,6 +157,30 @@ pub const GLOBAL_MAX_VOLUME_PER_HOUR: i128 = 50_000_000_000_000; // 50 trillion 
 pub const HOUR_IN_SECONDS: u64 = 3600;
 pub const MAX_AMOUNT: i128 = 100_000_000_000;
 pub const MAX_SUBSCRIPTION_AMOUNT: i128 = 100_000_000_000_000;
+/// Maximum permitted subscription billing interval in seconds (400 years).
+///
+/// Rationale: `last_charged + interval` and `last_charged + interval + grace_period`
+/// are `u64` additions. An interval near `u64::MAX` wraps those expressions,
+/// causing every charge call for that subscription to abort. Inside `batch_charge`
+/// that abort was historically transaction-wide (a self-inflicted DoS). Even after
+/// per-user abort isolation the keeper cannot collect from such a subscription,
+/// making it an operational hazard.
+///
+/// 400 years (≈ 12 623 040 000 s) is far beyond any real billing cycle and keeps
+/// all timestamp arithmetic safely within the representable `u64` range for any
+/// foreseeable ledger timestamp. Mirrors the `MAX_SUBSCRIPTION_AMOUNT` precedent.
+pub const MAX_SUBSCRIPTION_INTERVAL: u64 = 12_623_040_000; // 400 years in seconds
+/// Maximum permitted subscription billing interval (seconds).
+///
+/// Rationale: Soroban timestamps are `u64` Unix seconds. Adding a near-`u64::MAX`
+/// interval to `last_charged` overflows, which aborts the charge call and, inside
+/// `batch_charge`, can abort or force-skip the whole batch — a self-inflicted DoS.
+///
+/// 400 years in seconds (≈ 12_623_040_000) is far beyond any commercially
+/// meaningful billing cycle and keeps `last_charged + interval` safely within the
+/// representable `u64` range for any realistic ledger timestamp.
+/// Mirror of `MAX_SUBSCRIPTION_AMOUNT` precedent (see above).
+pub const MAX_SUBSCRIPTION_INTERVAL: u64 = 12_623_040_000; // 400 years in seconds
 
 // ─────────────────────────────────────────────────────────────
 // Data types
@@ -570,7 +594,7 @@ impl FlowPay {
         }
 
         let grace_period = grace::get_grace_period(&env);
-        if grace_period > 0 && now > next + grace_period {
+        if grace_period > 0 && now > next.saturating_add(grace_period) {
             env.panic_with_error(ContractError::GracePeriodElapsed);
         }
 
@@ -1097,7 +1121,7 @@ impl FlowPay {
             return false;
         }
         let grace = grace::get_grace_period(&env);
-        if grace > 0 && now > next + grace {
+        if grace > 0 && now > next.saturating_add(grace) {
             return false;
         }
         true
@@ -1551,7 +1575,7 @@ impl FlowPay {
                             let now = env.ledger().timestamp();
                             if now >= next {
                                 let grace = grace::get_grace_period(&env);
-                                let lapsed = grace > 0 && now > next + grace;
+                                let lapsed = grace > 0 && now > next.saturating_add(grace);
                                 if !exclude || !lapsed {
                                     result.push_back(addr);
                                 }
@@ -1684,7 +1708,7 @@ impl FlowPay {
         let grace = grace::get_grace_period(&env);
 
         let within_grace = if let Some(next) = next_charge {
-            now >= next && grace > 0 && now <= next + grace
+            now >= next && grace > 0 && now <= next.saturating_add(grace)
         } else {
             false
         };

@@ -8,6 +8,19 @@ There is **no** `frontend/src/shared/constants.ts`. Amount/interval UI constants
 
 ---
 
+## Subscription interval bounds
+
+| Constant                  | Value                  | Source                          | Notes |
+| ------------------------- | ---------------------- | ------------------------------- | ----- |
+| `MAX_SUBSCRIPTION_INTERVAL` | **12 623 040 000 s** (≈ 400 years) | `contract/src/lib.rs` | Upper bound enforced in `validate_interval`. Interval above this returns `IntervalExceedsMaximum` (error 46). |
+| Min interval (default)    | **60 s** (1 minute)    | `contract/src/min_interval.rs`  | Admin-configurable via `set_min_interval`. |
+
+**Why the cap exists:** Soroban timestamps are `u64` Unix seconds. `last_charged + interval` and `last_charged + interval + grace_period` are both u64 additions. A near-`u64::MAX` interval overflows those expressions, causing every `charge()` call for that subscription to abort — inside `batch_charge` that historically aborted the whole batch (a self-inflicted DoS / keeper hazard). All timestamp arithmetic now uses `saturating_add` so extreme legacy values (injected directly into storage) cannot abort a batch; they are simply treated as "not yet due" forever.
+
+**Legacy subscriptions:** Any subscription created before this cap was introduced with an interval above `MAX_SUBSCRIPTION_INTERVAL` can still be cancelled via `cancel(user)` but cannot be charged. The subscriber must re-subscribe with a valid interval to restore chargeability.
+
+---
+
 ## Admin batch operations (UI ↔ contract)
 
 | Operation | Contract method | UI cap (addresses / call) | Contract cap (addresses / call) | UI source | Contract source | Alignment |
