@@ -5,6 +5,13 @@
     dead_code,
     clippy::inconsistent_digit_grouping
 )]
+// Test snapshots in `test_snapshots/test/` are GENERATED at test time: every
+// `Env` dropped by a test below writes its ledger entries and events to
+// `test_snapshots/test/<test-name>.<N>.json` (see `test_snapshots/README.md`).
+// Regenerate with a full `cargo test` and commit the result together with the
+// change that produced it; never hand-edit a snapshot, and delete the file when
+// a test here is renamed or removed. `contract/scripts/snapshot-check.mjs` fails
+// CI on orphaned, corrupt, gapped or stale snapshot files.
 
 use super::*;
 use soroban_sdk::{
