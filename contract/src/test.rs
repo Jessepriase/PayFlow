@@ -11547,6 +11547,9 @@ fn test_charge_result_variant_count() {
     // `scvU32(n)` back to a variant name using this table, so reordering the
     // enum is a wire-breaking change even though the Rust still compiles.
     // See `docs/charge-results.md`.
+    //
+    // Each variant must encode to exactly the same Val as the bare u32 of its
+    // discriminant, which is what makes it an scvU32 and not an scvSymbol.
     let wire_layout = [
         (ChargeResult::Charged, 0u32),
         (ChargeResult::Skipped, 1u32),
@@ -11557,14 +11560,12 @@ fn test_charge_result_variant_count() {
         (ChargeResult::AllowanceInsufficient, 6u32),
     ];
     for (variant, expected_discriminant) in wire_layout.iter() {
-        let scval: soroban_sdk::Val = variant.clone().into_val(&env);
-        let wire: u32 = scval
-            .try_into_val(&env)
-            .expect("ChargeResult must encode as an scvU32 discriminant, not an scvSymbol");
-        assert_eq!(
-            wire, *expected_discriminant,
-            "ChargeResult discriminant moved; update docs/charge-results.md and every off-chain decoder"
-        );
+        let n: u32 = *expected_discriminant;
+        let from_variant: soroban_sdk::Val = variant.clone().into_val(&env);
+        let from_bare_u32: soroban_sdk::Val = n.into_val(&env);
+        let a = unsafe { core::mem::transmute::<soroban_sdk::Val, u64>(from_variant) };
+        let b = unsafe { core::mem::transmute::<soroban_sdk::Val, u64>(from_bare_u32) };
+        assert_eq!(a, b, "ChargeResult must encode as scvU32({n}), not an scvSymbol");
     }
 }
 
