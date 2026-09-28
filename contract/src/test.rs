@@ -1410,6 +1410,155 @@ fn test_unfreeze_merchant_non_frozen_is_noop() {
 }
 
 // ─────────────────────────────────────────────────────────────────────
+// Issue #821: freeze_merchant TTL archive-proofing
+// ─────────────────────────────────────────────────────────────────────
+
+/// Verify that `MerchantFrozen` and `MerchantFreezeReason` survive past the
+/// SDK default live-until so a ban cannot silently lapse without an explicit
+/// `unfreeze_merchant` call.
+///
+/// Pattern mirrors `test_extend_subscriber_index_ttl_extends_large_index`:
+///   1. Raise `max_entry_ttl` so the environment accepts our extend target.
+///   2. Freeze the merchant (stores both keys and calls extend_ttl).
+///   3. Advance the ledger sequence past the old default archival point.
+///   4. Confirm both keys still exist in persistent storage (TTL ≥ 1555200).
+///   5. Confirm `is_merchant_frozen` still returns `true` (no silent un-ban).
+///   6. Confirm that subscribing to the frozen merchant still panics.
+#[test]
+fn test_frozen_merchant_survives_past_default_archive_point() {
+    use soroban_sdk::testutils::storage::Persistent as _;
+
+    let (env, contract_id, token_addr, user, merchant) = setup();
+    let client = FlowPayClient::new(&env, &contract_id);
+
+    let admin = Address::generate(&env);
+    env.as_contract(&contract_id, || {
+        storage::set_admin(&env, &admin);
+    });
+
+    // Allow large TTL values so extend_ttl can reach the full 1555200 window.
+    env.ledger().with_mut(|l| {
+        l.max_entry_ttl = 10_000_000;
+    });
+
+    let reason = soroban_sdk::String::from_str(&env, "banned for policy violation");
+    client.freeze_merchant(&merchant, &Some(reason));
+
+    // Confirm both keys exist before the time jump.
+    env.as_contract(&contract_id, || {
+        assert!(
+            env.storage()
+                .persistent()
+                .has(&DataKey::MerchantFrozen(merchant.clone())),
+            "MerchantFrozen must exist immediately after freeze"
+        );
+        assert!(
+            env.storage()
+                .persistent()
+                .has(&DataKey::MerchantFreezeReason(merchant.clone())),
+            "MerchantFreezeReason must exist immediately after freeze"
+        );
+    });
+
+    // Keep the contract instance alive across the ledger jump.
+    env.as_contract(&contract_id, || {
+        env.storage()
+            .instance()
+            .extend_ttl(2_000_000, 2_000_000);
+    });
+
+    // Advance past the SDK default archive point (4096 ledgers) but well within
+    // the new 1555200-ledger window we extended to.
+    env.ledger().with_mut(|l| {
+        l.sequence_number += 100_000; // >> 4096 default, << 1555200 extended
+    });
+
+    // Both persistent keys must still be live.
+    env.as_contract(&contract_id, || {
+        let frozen_ttl = env
+            .storage()
+            .persistent()
+            .get_ttl(&DataKey::MerchantFrozen(merchant.clone()));
+        assert!(
+            frozen_ttl >= 1_000_000,
+            "MerchantFrozen TTL must be well above default archive point; got {frozen_ttl}"
+        );
+
+        let reason_ttl = env
+            .storage()
+            .persistent()
+            .get_ttl(&DataKey::MerchantFreezeReason(merchant.clone()));
+        assert!(
+            reason_ttl >= 1_000_000,
+            "MerchantFreezeReason TTL must be well above default archive point; got {reason_ttl}"
+        );
+    });
+
+    // Public API must confirm the merchant is still frozen.
+    assert!(
+        client.is_merchant_frozen(&merchant),
+        "is_merchant_frozen must return true after ledger advance"
+    );
+
+    // Attempting a new subscription must still be blocked.
+    let new_user = setup_funded_user(&env, &contract_id, &token_addr);
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        client.subscribe(
+            &new_user,
+            &merchant,
+            &1_0000000,
+            &86400,
+            &token_addr,
+            &None,
+            &None,
+        );
+    }));
+    assert!(
+        result.is_err(),
+        "subscribe to a frozen merchant must panic even after the ledger advance"
+    );
+}
+
+/// Re-freeze (freeze → unfreeze → freeze) extends the TTL on the second freeze
+/// so the re-ban is also archive-proof.
+#[test]
+fn test_refreeze_merchant_extends_ttl() {
+    use soroban_sdk::testutils::storage::Persistent as _;
+
+    let (env, contract_id, _token_addr, _user, merchant) = setup();
+    let client = FlowPayClient::new(&env, &contract_id);
+
+    let admin = Address::generate(&env);
+    env.as_contract(&contract_id, || {
+        storage::set_admin(&env, &admin);
+    });
+
+    env.ledger().with_mut(|l| {
+        l.max_entry_ttl = 10_000_000;
+    });
+
+    // First freeze, then unfreeze (removes both keys).
+    client.freeze_merchant(&merchant, &None);
+    client.unfreeze_merchant(&merchant);
+    assert!(!client.is_merchant_frozen(&merchant));
+
+    // Re-freeze: must write and TTL-extend the keys again.
+    client.freeze_merchant(&merchant, &None);
+    assert!(client.is_merchant_frozen(&merchant));
+
+    env.as_contract(&contract_id, || {
+        let ttl = env
+            .storage()
+            .persistent()
+            .get_ttl(&DataKey::MerchantFrozen(merchant.clone()));
+        assert!(
+            ttl >= 1_000_000,
+            "MerchantFrozen TTL after re-freeze must be well above archive point; got {ttl}"
+        );
+    });
+}
+
+// ─────────────────────────────────────────────────────────────────────
 // Issue #820: Idempotent whitelist/freeze event suppression tests
 // ─────────────────────────────────────────────────────────────────────
 //
