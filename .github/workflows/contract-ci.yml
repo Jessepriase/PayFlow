@@ -1,0 +1,77 @@
+name: Contract CI
+
+# Contract CI runs the Soroban instruction-budget bench gate on every contract
+# change.
+#
+# The benches in `contract/src/bench.rs` measure the CPU instruction cost of the
+# core entrypoints (subscribe, charge, pay_per_use, batch_charge). A small refactor
+# can push a contract over a deploy-time instruction budget, and the bench is the
+# only early signal — this job is what stops such a regression from landing
+# silently.
+#
+# The job runs `cargo test bench`, which selects every test function whose name
+# contains "bench" (bench_subscribe, bench_charge, bench_pay_per_use,
+# bench_batch_charge_10_users, bench_charge_vs_subscribe_ratio).
+# `-- --nocapture` prints the instruction counts on a *passing* run too, so the
+# cost curve is visible across CI history and not only when something breaks.
+#
+# Pinned budgets (Soroban SDK 21, recorded 2026-06-01) live in
+# `contract/src/bench.rs` as the `MAX_*_INSTRUCTIONS` constants, each with ~10%
+# headroom above its measured baseline. The asserts in bench.rs fail this job
+# with a message naming the entrypoint and the actual vs threshold value, e.g.
+#
+#   subscribe() CPU (4700000) exceeds budget threshold (4620000)
+#
+# Re-pin policy: when a deliberate change shifts a baseline by more than ~5%,
+# re-pin the constant in bench.rs and update the baseline comment on the same
+# bench with the new date and measured cost, in one commit. The budget is not
+# relaxed to make a bench pass.
+
+on:
+  push:
+    branches: ["master"]
+    paths: ["contract/**", ".github/workflows/contract-ci.yml"]
+  pull_request:
+    branches: ["master"]
+    paths: ["contract/**", ".github/workflows/contract-ci.yml"]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: contract-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  # ── Instruction-budget gate ──────────────────────────────────────────────
+  # Runs the bench_* tests in src/bench.rs in isolation so that instruction-
+  # count output is always visible in the log and budget violations surface as
+  # a named CI failure rather than a silent on-chain regression.
+  bench:
+    name: Bench smoke — instruction budgets
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: contract
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install Rust target
+        run: rustup target add wasm32-unknown-unknown
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: contract
+
+      - name: Run instruction-budget benchmarks
+        # Filter to bench_* tests only; --nocapture prints CPU/memory numbers
+        # so the cost curve is visible on every run, not just on failure.
+        run: cargo test bench -- --nocapture
