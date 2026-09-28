@@ -13,6 +13,7 @@ extern crate std;
 
 mod admin;
 mod batch;
+mod caps;
 #[cfg(feature = "bench")]
 mod bench;
 mod charge_exec;
@@ -1669,6 +1670,29 @@ impl FlowPay {
     /// (sum of all successful `charge()` and `pay_per_use()` calls).
     pub fn get_merchant_revenue(env: Env, merchant: Address) -> i128 {
         merchant_stats::get_merchant_revenue(&env, &merchant)
+    }
+
+    /// Withdraws the accumulated revenue for a merchant and transfers it to them.
+    /// Requires merchant auth. Panics if the balance is zero.
+    pub fn withdraw_merchant_revenue(env: Env, merchant: Address) {
+        ensure_contract_not_paused(&env);
+        merchant.require_auth();
+
+        let token_addr = storage::get_token(&env)
+            .unwrap_or_else(|| env.panic_with_error(ContractError::NotInitialized));
+
+        let amount = merchant_stats::get_merchant_revenue(&env, &merchant);
+        if amount <= 0 {
+            env.panic_with_error(ContractError::ZeroBalanceAvailable);
+        }
+
+        // Reset before transfer to guard against reentrancy.
+        merchant_stats::reset_merchant_revenue(&env, &merchant);
+
+        let token_client = token::Client::new(&env, &token_addr);
+        token_client.transfer(&env.current_contract_address(), &merchant, &amount);
+
+        events::publish_merchant_withdrawal(&env, &merchant, amount);
     }
 
     /// Returns per-charge revenue entries for the merchant (up to `days` most recent).

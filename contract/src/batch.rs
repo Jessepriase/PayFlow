@@ -228,3 +228,6 @@ pub fn batch_cancel(env: &Env, users: Vec<Address>) -> Vec<CancelResult> {
     results
 }
 
+    results
+}
+

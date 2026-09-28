@@ -1223,6 +1223,28 @@ fn test_get_whitelist_enabled_toggles() {
     client.set_whitelist_enabled(&true);
     assert!(client.get_whitelist_enabled());
 }
+/// Regression test for #1014: is_merchant_whitelisted must return true after
+/// add_merchant even though the duplicate MerchantWhitelist write was removed.
+/// Only the canonical write (with TTL extension) should remain.
+#[test]
+fn test_add_merchant_is_whitelisted_after_single_write() {
+    let (env, contract_id, _token_addr, _user, merchant) = setup();
+    let client = FlowPayClient::new(&env, &contract_id);
+
+    let admin = Address::generate(&env);
+    env.as_contract(&contract_id, || {
+        storage::set_admin(&env, &admin);
+    });
+
+    // Before add_merchant, not whitelisted
+    assert!(!client.is_merchant_whitelisted(&merchant));
+
+    client.add_merchant(&merchant);
+
+    // After add_merchant, must be whitelisted (single canonical write suffices)
+    assert!(client.is_merchant_whitelisted(&merchant));
+}
+
 
 // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // Merchant freeze tests
