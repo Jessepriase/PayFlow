@@ -14,7 +14,7 @@ use soroban_sdk::{
 };
 
 /// Returns (env, contract_id, token_addr, user, merchant)
-fn setup() -> (Env, Address, Address, Address, Address) {
+pub(crate) fn setup() -> (Env, Address, Address, Address, Address) {
     let env = Env::default();
     env.mock_all_auths();
 
@@ -58,7 +58,7 @@ fn setup_second_token(env: &Env, contract_id: &Address, user: &Address) -> Addre
     token_addr
 }
 
-fn setup_funded_user(env: &Env, contract_id: &Address, token_addr: &Address) -> Address {
+pub(crate) fn setup_funded_user(env: &Env, contract_id: &Address, token_addr: &Address) -> Address {
     let user = Address::generate(env);
     let sac = StellarAssetClient::new(env, token_addr);
     sac.mint(&user, &10_000_0000000);

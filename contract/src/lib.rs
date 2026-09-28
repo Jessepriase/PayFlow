@@ -24,6 +24,8 @@ mod merchant_stats;
 mod migration;
 mod min_interval;
 mod referral;
+#[cfg(test)]
+mod scenario;
 mod spending_limit;
 mod storage;
 mod subscription_count;
