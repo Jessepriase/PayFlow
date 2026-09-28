@@ -47,6 +47,10 @@ export function getDeprecationWarnings(): string[] {
   return DEPRECATION_WARNINGS;
 }
 
+export function clearDeprecationWarnings(): void {
+  DEPRECATION_WARNINGS.length = 0;
+}
+
 export function logDeprecationWarnings(): void {
   if (DEPRECATION_WARNINGS.length > 0) {
     console.warn("\n⚠ Deprecated environment variables detected:\n");
@@ -135,17 +139,6 @@ export const ConfigSchema = z.object({
     ),
 
   /** Maximum number of subscriptions to charge in a single transaction (1–200) */
-  BATCH_SIZE: z.coerce
-  /**
-   * Maximum number of subscriptions to charge in a single transaction (1–200).
-   * The upper bound of 200 mirrors the contract's `MAX_BATCH_SIZE_CEILING` —
-   * the hard cap no admin-configured on-chain batch limit can exceed. This
-   * schema only validates the env var's shape; `keeper.ts` additionally
-   * clamps the effective value at startup to whatever `get_max_batch_size()`
-   * reports on-chain right now (which defaults to 50 and may be lower than
-   * this 200 ceiling), so a value that passes this schema can still be
-   * narrowed further before it's used.
-   */
   BATCH_SIZE: z
     .coerce
     .number({ invalid_type_error: "BATCH_SIZE must be a number" })

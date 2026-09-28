@@ -12589,6 +12589,95 @@ fn test_set_global_volume_cap_no_admin_panics() {
     assert!(result.is_err());
 }
 
+/// Lowering the cap via set_global_volume_cap rejects over-cap volume.
+#[test]
+fn test_global_volume_cap_override_lower_enforced() {
+    let (env, contract_id, token_addr, _user_setup, merchant) = setup();
+    let client = FlowPayClient::new(&env, &contract_id);
+    install_admin(&env, &contract_id);
+
+    // Set a lower cap: 10 trillion stroops
+    let lower_cap: i128 = 10_000_000_000_000;
+    client.set_global_volume_cap(&lower_cap);
+    assert_eq!(client.get_global_volume_cap(), lower_cap);
+
+    // Subscribe a user with amount exceeding the lowered cap
+    let user = setup_large_balance(&env, &contract_id, &token_addr);
+    let amount: i128 = 15_000_000_000_000; // 15 trillion > 10 trillion cap
+    let interval: u64 = 86400;
+
+    client.subscribe(
+        &user,
+        &merchant,
+        &amount,
+        &interval,
+        &token_addr,
+        &None,
+        &None,
+    );
+
+    env.ledger().with_mut(|l| {
+        l.timestamp += interval + 1;
+    });
+
+    // Charge should fail with GlobalVolumeExceeded because amount > cap
+    let result = client.try_charge(&user);
+    assert!(result.is_err());
+}
+
+/// Raising the cap via set_global_volume_cap allows previously rejected amounts.
+#[test]
+fn test_global_volume_cap_override_raise_allows_more() {
+    let (env, contract_id, token_addr, _user_setup, merchant) = setup();
+    let client = FlowPayClient::new(&env, &contract_id);
+    install_admin(&env, &contract_id);
+
+    // Start with default cap (50 trillion), set a higher cap: 100 trillion
+    let higher_cap: i128 = 100_000_000_000_000;
+    client.set_global_volume_cap(&higher_cap);
+    assert_eq!(client.get_global_volume_cap(), higher_cap);
+
+    // Subscribe a user with amount that would exceed default but not raised cap
+    let user = setup_large_balance(&env, &contract_id, &token_addr);
+    let amount: i128 = 75_000_000_000_000; // 75 trillion > 50T default, < 100T raised
+    let interval: u64 = 86400;
+
+    client.subscribe(
+        &user,
+        &merchant,
+        &amount,
+        &interval,
+        &token_addr,
+        &None,
+        &None,
+    );
+
+    env.ledger().with_mut(|l| {
+        l.timestamp += interval + 1;
+    });
+
+    // Charge should succeed because raised cap allows it
+    client.charge(&user);
+}
+
+/// get_contract_config reports the effective cap (override when set, else default).
+#[test]
+fn test_get_contract_config_reports_effective_cap() {
+    let (env, contract_id, _token_addr, _user, _merchant) = setup();
+    let client = FlowPayClient::new(&env, &contract_id);
+    install_admin(&env, &contract_id);
+
+    // Default cap
+    let config = client.get_contract_config();
+    assert_eq!(config.global_volume_cap, GLOBAL_MAX_VOLUME_PER_HOUR);
+
+    // After override
+    let new_cap: i128 = 25_000_000_000_000;
+    client.set_global_volume_cap(&new_cap);
+    let config = client.get_contract_config();
+    assert_eq!(config.global_volume_cap, new_cap);
+}
+
 // ─────────────────────────────────────────────────────────────────────
 // Issue #823: Pagination safety tests for get_active_subscriber_page
 // ─────────────────────────────────────────────────────────────────────

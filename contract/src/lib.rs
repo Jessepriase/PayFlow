@@ -170,20 +170,7 @@ pub const MAX_SUBSCRIPTION_AMOUNT: i128 = 100_000_000_000_000;
 /// 400 years (≈ 12 623 040 000 s) is far beyond any real billing cycle and keeps
 /// all timestamp arithmetic safely within the representable `u64` range for any
 /// foreseeable ledger timestamp. Mirrors the `MAX_SUBSCRIPTION_AMOUNT` precedent.
-pub const MAX_SUBSCRIPTION_INTERVAL: u64 = 12_623_040_000; // 400 years in seconds
-/// Maximum permitted subscription billing interval (seconds).
-///
-/// Rationale: Soroban timestamps are `u64` Unix seconds. Adding a near-`u64::MAX`
-/// interval to `last_charged` overflows, which aborts the charge call and, inside
-/// `batch_charge`, can abort or force-skip the whole batch — a self-inflicted DoS.
-///
-/// 400 years in seconds (≈ 12_623_040_000) is far beyond any commercially
-/// meaningful billing cycle and keeps `last_charged + interval` safely within the
-/// representable `u64` range for any realistic ledger timestamp.
-/// Mirror of `MAX_SUBSCRIPTION_AMOUNT` precedent (see above).
-pub const MAX_SUBSCRIPTION_INTERVAL: u64 = 12_623_040_000; // 400 years in seconds
-
-// ─────────────────────────────────────────────────────────────
+pub const MAX_SUBSCRIPTION_INTERVAL: u64 = 12_623_040_000; // 400 years in seconds// ─────────────────────────────────────────────────────────────
 // Data types
 // ─────────────────────────────────────────────────────────────
 
@@ -395,7 +382,7 @@ impl FlowPay {
             grace_period: grace::get_grace_period(&env),
             min_interval: min_interval::get_min_interval(&env),
             max_batch_size: batch::get_max_batch_size(&env),
-            global_volume_cap: GLOBAL_MAX_VOLUME_PER_HOUR,
+            global_volume_cap: effective_global_volume_cap(&env),
             whitelist_enabled: whitelist::is_whitelist_enabled(&env),
             paused: is_contract_paused(&env),
             schema_version: env
@@ -2125,10 +2112,7 @@ impl FlowPay {
     /// Falls back to the compile-time `GLOBAL_MAX_VOLUME_PER_HOUR` default
     /// when no operator override has been configured.
     pub fn get_global_volume_cap(env: Env) -> i128 {
-        env.storage()
-            .instance()
-            .get(&DataKey::GlobalVolumeCapOverride)
-            .unwrap_or(GLOBAL_MAX_VOLUME_PER_HOUR)
+        effective_global_volume_cap(&env)
     }
 
     /// Returns the current global volume window as `(accumulated_volume, window_start_timestamp)`.
@@ -2485,11 +2469,7 @@ pub(crate) fn check_and_update_global_volume(env: &Env, amount: i128) {
 
     // Use the admin-configurable override when set, falling back to the
     // compile-time constant. This makes set_global_volume_cap effective.
-    let cap: i128 = env
-        .storage()
-        .instance()
-        .get(&DataKey::GlobalVolumeCapOverride)
-        .unwrap_or(GLOBAL_MAX_VOLUME_PER_HOUR);
+    let cap: i128 = effective_global_volume_cap(env);
 
     if new_volume > cap {
         env.panic_with_error(ContractError::GlobalVolumeExceeded);
@@ -2499,6 +2479,17 @@ pub(crate) fn check_and_update_global_volume(env: &Env, amount: i128) {
     env.storage()
         .instance()
         .set(&DataKey::GlobalVolumeWindow, &window);
+}
+
+/// Returns the effective global hourly volume cap, reading the admin override
+/// if set, otherwise the compile-time constant. Shared by `get_global_volume_cap`,
+/// `get_contract_config`, and `check_and_update_global_volume` so enforcement
+/// and reporting agree.
+pub(crate) fn effective_global_volume_cap(env: &Env) -> i128 {
+    env.storage()
+        .instance()
+        .get(&DataKey::GlobalVolumeCapOverride)
+        .unwrap_or(GLOBAL_MAX_VOLUME_PER_HOUR)
 }
 
 fn is_contract_paused(env: &Env) -> bool {

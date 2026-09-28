@@ -353,6 +353,20 @@ pub fn publish_max_batch_size_set(env: &Env, old: u32, new: u32) {
         MaxBatchSizeSetEventData { old, new },
     );
 }
+#[soroban_sdk::contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct MaxWhitelistBatchSizeSetEventData {
+    pub old: u32,
+    pub new: u32,
+}
+
+pub fn publish_max_whitelist_batch_size_set(env: &Env, old: u32, new: u32) {
+    env.events().publish(
+        (Symbol::new(env, "max_wl_batch_size_set"),),
+        MaxWhitelistBatchSizeSetEventData { old, new },
+    );
+}
+
 
 pub fn publish_merchant_history_cleared(env: &Env, merchant: &Address) {
     env.events()
@@ -598,50 +612,7 @@ pub fn publish_whitelist_enabled(env: &Env, enabled: bool) {
         .publish((Symbol::new(env, "whitelist_enabled"),), enabled);
 }
 
-pub fn publish_max_whitelist_batch_size_set(env: &Env, old: u32, new: u32) {
-    env.events()
-        .publish((Symbol::new(env, "max_wl_batch_size_set"),), (old, new));
-}
 
-pub fn publish_cancelled(env: &Env, user: &Address) {
-    env.events().publish(
-        (Symbol::new(env, "cancelled"), user.clone()),
-        CancelledEventData {
-            ledger_sequence: env.ledger().sequence(),
-        },
-    );
-}
-
-pub fn publish_cancelled_with_refund(env: &Env, user: &Address, refund_amount: i128) {
-    env.events().publish(
-        (Symbol::new(env, "cancelled_with_refund"), user.clone()),
-        CancelledWithRefundEventData {
-            refund_amount,
-            ledger_sequence: env.ledger().sequence(),
-        },
-    );
-}
-
-pub fn publish_pay_per_use(env: &Env, user: &Address, merchant: &Address, amount: i128) {
-    env.events().publish(
-        (Symbol::new(env, "pay_per_use"), user.clone()),
-        PayPerUseEventData {
-            merchant: merchant.clone(),
-            amount,
-            ledger_sequence: env.ledger().sequence(),
-        },
-    );
-}
-
-
-
-/// Publishes `metadata_set` event — called from `subscription_metadata::set_metadata`.
-pub fn metadata_set(env: &Env, user: &Address, label: &String) {
-    env.events().publish(
-        (Symbol::new(env, "metadata_set"), user.clone()),
-        label.clone(),
-    );
-}
 
 /// Publishes `metadata_cleared` event — called from `subscription_metadata::clear_metadata`.
 pub fn metadata_cleared(env: &Env, user: &Address) {
