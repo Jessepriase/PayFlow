@@ -55,6 +55,43 @@ pub fn publish_subscribed(env: &Env, user: &Address, sub: &Subscription) {
     );
 }
 
+/// Publishes `cancelled(user)` after a subscription is cancelled.
+pub fn publish_cancelled(env: &Env, user: &Address) {
+    env.events().publish(
+        (Symbol::new(env, "cancelled"), user.clone()),
+        CancelledEventData {
+            ledger_sequence: env.ledger().sequence(),
+        },
+    );
+}
+
+/// Publishes `cancelled_with_refund(user, refund)` after a prorated refund
+/// cancels the subscription. `refund` is the amount transferred back to the
+/// subscriber, in the subscription's token.
+pub fn publish_cancelled_with_refund(env: &Env, user: &Address, refund: i128) {
+    env.events().publish(
+        (Symbol::new(env, "cancelled_with_refund"), user.clone()),
+        CancelledWithRefundEventData {
+            refund_amount: refund,
+            ledger_sequence: env.ledger().sequence(),
+        },
+    );
+}
+
+/// Publishes `pay_per_use(user)` for an instant micro-transfer to `merchant`.
+/// The recipient is carried in the payload as `merchant` so indexers keying on
+/// `(event, user)` still see every payment the subscriber made.
+pub fn publish_pay_per_use(env: &Env, user: &Address, merchant: &Address, amount: i128) {
+    env.events().publish(
+        (Symbol::new(env, "pay_per_use"), user.clone()),
+        PayPerUseEventData {
+            merchant: merchant.clone(),
+            amount,
+            ledger_sequence: env.ledger().sequence(),
+        },
+    );
+}
+
 pub fn publish_charged(
     env: &Env,
     user: &Address,
@@ -120,7 +157,7 @@ pub fn publish_admin_transfer_proposed(env: &Env, new_admin: &Address) {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct MetadataSetEventData {
     pub user: Address,
-    pub label: BytesN<64>,
+    pub label: String,
     pub ledger_sequence: u32,
 }
 
@@ -134,7 +171,7 @@ pub struct MetadataClearedEventData {
 }
 
 /// Publishes `metadata_set(user)` with the written label.
-pub fn publish_metadata_set(env: &Env, user: &Address, label: &BytesN<64>) {
+pub fn publish_metadata_set(env: &Env, user: &Address, label: &String) {
     env.events().publish(
         (Symbol::new(env, "metadata_set"), user.clone()),
         MetadataSetEventData {

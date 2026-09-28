@@ -1,5 +1,11 @@
 use soroban_sdk::contracterror;
 
+/// Canonical contract error catalog: the numeric codes below are the wire
+/// contract, and `frontend/src/utils/errors.ts` maps each one to a
+/// customer-facing message. `frontend/src/utils/errors.test.ts` parses this file
+/// and fails if a code is missing from that map, duplicated in it, or mapped to
+/// two different messages, so a new or retired variant has to be carried over to
+/// the frontend in the same change.
 #[contracterror]
 #[derive(Copy, Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
 #[repr(u32)]
@@ -78,8 +84,6 @@ pub enum ContractError {
     InvalidVolumeCap = 33,
     /// Returned when configured fee bounds are inconsistent (min > max, or max > 10000)
     InvalidFeeBounds = 34,
-    /// Returned when resume is called on a subscription whose grace period has elapsed.
-    /// Cancel is still allowed; re-subscribe outside this flow to reactivate.
     /// Returned when a pending fee proposal violates the current fee bounds at commit time.
     FeeOutOfBoundsAtCommit = 35,
     /// Returned when a checked arithmetic operation overflows (trial extension,

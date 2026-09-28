@@ -1,6 +1,5 @@
 use soroban_sdk::{contracttype, Address, Env, Vec};
 
-use crate::caps;
 use crate::charge_exec;
 use crate::events;
 use crate::events::BatchChargeSkipsEventData;
@@ -67,7 +66,10 @@ pub enum ChargeResult {
 }
 
 pub(crate) fn get_max_batch_size(env: &Env) -> u32 {
-    caps::get_max_batch_size(env)
+    env.storage()
+        .instance()
+        .get(&DataKey::MaxBatchSize)
+        .unwrap_or(MAX_BATCH_SIZE)
 }
 
 /// Attempts to charge each user in `users`.
@@ -197,7 +199,7 @@ pub fn batch_extend_subscription_ttl(env: &Env, users: Vec<Address>) -> Vec<Addr
 }
 
 pub fn batch_cancel(env: &Env, users: Vec<Address>) -> Vec<CancelResult> {
-    if users.len() > caps::MAX_BATCH_PAUSE_SUBSCRIPTIONS {
+    if users.len() > crate::MAX_BATCH_PAUSE_SUBSCRIPTIONS {
         env.panic_with_error(crate::errors::ContractError::BatchTooLarge);
     }
 
@@ -225,3 +227,7 @@ pub fn batch_cancel(env: &Env, users: Vec<Address>) -> Vec<CancelResult> {
 
     results
 }
+
+    results
+}
+

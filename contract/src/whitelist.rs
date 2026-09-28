@@ -241,3 +241,4 @@ pub fn get_freeze_reason(env: &Env, merchant: &Address) -> Option<soroban_sdk::S
         .persistent()
         .get(&DataKey::MerchantFreezeReason(merchant.clone()))
 }
+}

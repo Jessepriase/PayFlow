@@ -46,39 +46,6 @@ use crate::{extend_subscription_ttl, DataKey, MAX_AMOUNT, Subscription};
 ///     while the batch path distinguishes `NoSubscription`
 ///     from `Inactive` — the mapping is explicit in the
 ///     conversion helpers below.
-///
-/// ─────────────────────────────────────────────────────────────
-/// Estimate-vs-live parity contract (Issue #1041)
-/// ─────────────────────────────────────────────────────────────
-///
-/// `get_batch_charge_estimate` mirrors the dry-run precheck but
-/// claims `Charged` from the allowance snapshot alone, whereas the
-/// live `batch_charge` path additionally performs fee collection
-/// and `try_auto_resume` side effects.  The parity fixture in
-/// `src/test.rs` (`estimate_live_parity_*`) drives both paths from
-/// an identical paused/grace/allowance snapshot and pins the
-/// following contract so a refactor cannot silently change it:
-///
-///   * For a *normal* snapshot (active, due, sufficient allowance,
-///     no fee configured, no pause expiry to auto-resume) the
-///     estimate outcome and the live outcome are **equal**:
-///     estimate `Charged` ⇔ live `Charged`.
-///   * Residual, intentional differences (do NOT "fix" these by
-///     making the paths identical — that is out of scope):
-///       - Fee collection: the live path debits the configured
-///         fee via `fee::collect_fee`; the estimate does not model
-///         the fee debit, so a snapshot that is only sufficient
-///         *before* the fee may estimate `Charged` while the live
-///         path fails the transfer.  The fixture bounds this by
-///         asserting equality only when no fee is configured.
-///       - `try_auto_resume`: the live path writes the auto-resumed
-///         subscription back to storage; the estimate performs a
-///         purely virtual auto-resume (no writes).  The fixture
-///         asserts the *outcome* matches for an expired pause
-///         expiry, while the estimate leaves storage untouched.
-///
-/// Keep this comment adjacent to the precheck so the divergence is
-/// documented next to the code that produces it.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) enum DryRunSkipOutcome {
     NoSubscription,

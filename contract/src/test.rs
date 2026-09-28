@@ -5,6 +5,13 @@
     dead_code,
     clippy::inconsistent_digit_grouping
 )]
+// Test snapshots in `test_snapshots/test/` are GENERATED at test time: every
+// `Env` dropped by a test below writes its ledger entries and events to
+// `test_snapshots/test/<test-name>.<N>.json` (see `test_snapshots/README.md`).
+// Regenerate with a full `cargo test` and commit the result together with the
+// change that produced it; never hand-edit a snapshot, and delete the file when
+// a test here is renamed or removed. `contract/scripts/snapshot-check.mjs` fails
+// CI on orphaned, corrupt, gapped or stale snapshot files.
 
 use super::*;
 use soroban_sdk::{
@@ -14,7 +21,7 @@ use soroban_sdk::{
 };
 
 /// Returns (env, contract_id, token_addr, user, merchant)
-fn setup() -> (Env, Address, Address, Address, Address) {
+pub(crate) fn setup() -> (Env, Address, Address, Address, Address) {
     let env = Env::default();
     env.mock_all_auths();
 
@@ -58,7 +65,7 @@ fn setup_second_token(env: &Env, contract_id: &Address, user: &Address) -> Addre
     token_addr
 }
 
-fn setup_funded_user(env: &Env, contract_id: &Address, token_addr: &Address) -> Address {
+pub(crate) fn setup_funded_user(env: &Env, contract_id: &Address, token_addr: &Address) -> Address {
     let user = Address::generate(env);
     let sac = StellarAssetClient::new(env, token_addr);
     sac.mint(&user, &10_000_0000000);
@@ -4468,6 +4475,195 @@ fn test_referral_updates_on_resubscribe() {
     assert_eq!(client.get_referrer(&user), Some(referrer_b));
 }
 
+// ─────────────────────────────────────────────────────────────
+// Issue #1011: TTL-extend referral attribution keys on write
+// ─────────────────────────────────────────────────────────────
+
+/// After subscribe with a referrer, the Referral key must be live in
+/// persistent storage (i.e. has() returns true) because store_referral
+/// calls extend_ttl to the full SUBSCRIPTION_TTL_LEDGERS window.
+#[test]
+fn test_referral_ttl_extended_on_store() {
+    let (env, contract_id, token_addr, user, merchant) = setup();
+    let client = FlowPayClient::new(&env, &contract_id);
+
+    let referrer = Address::generate(&env);
+    client.subscribe(
+        &user,
+        &merchant,
+        &1_0000000,
+        &86400,
+        &token_addr,
+        &None,
+        &Some(referrer.clone()),
+    );
+
+    // Verify the key is present and has a non-zero TTL immediately after write.
+    env.as_contract(&contract_id, || {
+        assert!(
+            env.storage()
+                .persistent()
+                .has(&DataKey::Referral(user.clone())),
+            "Referral key must exist after store_referral"
+        );
+    });
+
+    // Reading the referrer must still return the correct value.
+    assert_eq!(client.get_referrer(&user), Some(referrer));
+}
+
+/// A simulated archival (advance ledger past the default SDK live-until
+/// without the new extend_ttl in place would evict the key; with it the
+/// key stays live up to SUBSCRIPTION_TTL_LEDGERS).  We verify that after
+/// the key is gone (simulated by raw removal), get_referrer returns None
+/// without panicking — satisfying the "after archival, reads return none
+/// without a panic" acceptance criterion.
+#[test]
+fn test_referral_returns_none_after_archival() {
+    let (env, contract_id, token_addr, user, merchant) = setup();
+    let client = FlowPayClient::new(&env, &contract_id);
+
+    let referrer = Address::generate(&env);
+    client.subscribe(
+        &user,
+        &merchant,
+        &1_0000000,
+        &86400,
+        &token_addr,
+        &None,
+        &Some(referrer.clone()),
+    );
+
+    // Simulate archival: forcibly remove the key from inside the contract context.
+    env.as_contract(&contract_id, || {
+        env.storage()
+            .persistent()
+            .remove(&DataKey::Referral(user.clone()));
+    });
+
+    // After archival the public API must return None, not panic.
+    assert_eq!(
+        client.get_referrer(&user),
+        None,
+        "get_referrer must return None after key is archived/removed"
+    );
+}
+
+/// remove_referral (called by cancel) must drop the Referral key entirely
+/// so that no orphan entry is left behind.  A subsequent get_referrer
+/// must return None and persistent has() must be false.
+#[test]
+fn test_remove_referral_drops_key_cleanly() {
+    let (env, contract_id, token_addr, user, merchant) = setup();
+    let client = FlowPayClient::new(&env, &contract_id);
+
+    let referrer = Address::generate(&env);
+    client.subscribe(
+        &user,
+        &merchant,
+        &1_0000000,
+        &86400,
+        &token_addr,
+        &None,
+        &Some(referrer.clone()),
+    );
+
+    // Confirm the key exists before cancellation.
+    env.as_contract(&contract_id, || {
+        assert!(
+            env.storage()
+                .persistent()
+                .has(&DataKey::Referral(user.clone())),
+            "Referral key must exist before cancel"
+        );
+    });
+
+    client.cancel(&user);
+
+    // After cancel the key must be completely gone — no orphan entry.
+    env.as_contract(&contract_id, || {
+        assert!(
+            !env.storage()
+                .persistent()
+                .has(&DataKey::Referral(user.clone())),
+            "Referral key must be removed after cancel (no orphan)"
+        );
+    });
+
+    // Public API must also reflect the removal.
+    assert_eq!(
+        client.get_referrer(&user),
+        None,
+        "get_referrer must return None after cancel"
+    );
+}
+
+/// Cancelling a subscription that had no referrer must not panic even
+/// though remove_referral calls .remove() on a key that may not exist.
+#[test]
+fn test_remove_referral_without_referrer_is_safe() {
+    let (env, contract_id, token_addr, user, merchant) = setup();
+    let client = FlowPayClient::new(&env, &contract_id);
+
+    client.subscribe(
+        &user,
+        &merchant,
+        &1_0000000,
+        &86400,
+        &token_addr,
+        &None,
+        &None, // no referrer
+    );
+
+    // cancel must not panic even though no Referral key was ever written.
+    client.cancel(&user);
+
+    assert_eq!(client.get_referrer(&user), None);
+}
+
+/// Resubscribing overwrites the referral and must bump the TTL afresh.
+/// Both the old and new referrer values are exercised.
+#[test]
+fn test_referral_ttl_refreshed_on_resubscribe() {
+    let (env, contract_id, token_addr, user, merchant) = setup();
+    let client = FlowPayClient::new(&env, &contract_id);
+
+    let referrer_a = Address::generate(&env);
+    let referrer_b = Address::generate(&env);
+
+    client.subscribe(
+        &user,
+        &merchant,
+        &1_0000000,
+        &86400,
+        &token_addr,
+        &None,
+        &Some(referrer_a.clone()),
+    );
+    assert_eq!(client.get_referrer(&user), Some(referrer_a));
+
+    // Resubscribe with a new referrer — key must be updated and TTL bumped.
+    client.subscribe(
+        &user,
+        &merchant,
+        &1_0000000,
+        &86400,
+        &token_addr,
+        &None,
+        &Some(referrer_b.clone()),
+    );
+    assert_eq!(client.get_referrer(&user), Some(referrer_b));
+
+    env.as_contract(&contract_id, || {
+        assert!(
+            env.storage()
+                .persistent()
+                .has(&DataKey::Referral(user.clone())),
+            "Referral key must still be live after resubscribe"
+        );
+    });
+}
+
 #[test]
 fn test_grace_period_ttl_extension() {
     let (env, contract_id, _token_addr, _user, _merchant) = setup();
@@ -5453,15 +5649,13 @@ fn test_health_check_pending_merchant_revenue_counter() {
     let report2 = client.contract_health_check();
     assert_eq!(report2.pending_merchant_rev_count, 2);
 
-    // Withdraw merchant1's revenue (mint contract_id balance first so transfer succeeds)
-    sac.mint(&contract_id, &1000);
-    client.withdraw_merchant_revenue(&merchant1);
+    // Merchant revenue is non-custodial: there is no withdrawal to perform, the
+    // admin resets the cumulative counter once the merchant has settled off-chain.
+    client.reset_merchant_revenue(&merchant1);
     let report3 = client.contract_health_check();
     assert_eq!(report3.pending_merchant_rev_count, 1);
 
-    // Withdraw merchant2's revenue
-    sac.mint(&contract_id, &1000);
-    client.withdraw_merchant_revenue(&merchant2);
+    client.reset_merchant_revenue(&merchant2);
     let report4 = client.contract_health_check();
     assert_eq!(report4.pending_merchant_rev_count, 0);
 }
@@ -10017,7 +10211,9 @@ fn test_contract_config() {
     client.initialize(&token_addr, &admin);
 
     let config = client.get_contract_config();
-    assert_eq!(config.schema_version, 1);
+    // A fresh deployment starts at CURRENT_VERSION, not at 1: initialize() stamps
+    // the current schema so migration is never required on new deploys.
+    assert_eq!(config.schema_version, crate::migration::CURRENT_VERSION);
     assert_eq!(config.paused, false);
 }
 
@@ -10783,6 +10979,146 @@ fn test_merchant_fee_recipient_routing_and_fallback() {
     assert_eq!(token.balance(&custom_recipient), 10);
     assert_eq!(token.balance(&global_collector), 10);
     assert_eq!(token.balance(&merchant), 1980);
+}
+
+// ─────────────────────────────────────────────────────────────
+// Issue #1012: MerchantFeeRecipient TTL durability tests
+// ─────────────────────────────────────────────────────────────
+
+/// Scenario: archival-before-charge
+/// The merchant sets a custom fee recipient, then the ledger advances well
+/// past the naive minimum TTL that would apply without an explicit extension.
+/// The charge must still route fees to the custom recipient — proving that
+/// set_merchant_fee_recipient bumps the TTL on write.
+#[test]
+fn test_merchant_fee_recipient_survives_archival_before_charge() {
+    let (env, contract_id, token_addr, user, merchant) = setup();
+    let client = FlowPayClient::new(&env, &contract_id);
+    let token = TokenClient::new(&env, &token_addr);
+
+    let admin = Address::generate(&env);
+    env.as_contract(&contract_id, || {
+        storage::set_admin(&env, &admin);
+    });
+
+    let global_collector = Address::generate(&env);
+    client.propose_fee(&global_collector, &500); // 5%
+    client.commit_fee();
+
+    let custom_recipient = Address::generate(&env);
+    // set_merchant_fee_recipient must extend TTL to SUBSCRIPTION_TTL_LEDGERS
+    client.set_merchant_fee_recipient(&merchant, &custom_recipient);
+
+    let interval: u64 = 86400;
+    client.subscribe(&user, &merchant, &1000, &interval, &token_addr, &None, &None);
+
+    // Advance ledger sequence past what would be the minimum TTL if no
+    // extension had been applied (simulate near-expiry without archival).
+    // SUBSCRIPTION_TTL_LEDGERS / 2 + 1 is the threshold: the entry would
+    // have archived if written with the default minimum TTL.
+    env.ledger().with_mut(|l| {
+        l.sequence_number += SUBSCRIPTION_TTL_LEDGERS / 2 + 1;
+        l.timestamp += interval + 1;
+    });
+
+    let recipient_before = token.balance(&custom_recipient);
+    let global_before = token.balance(&global_collector);
+
+    client.charge(&user);
+
+    // Fee (5% of 1000 = 50) goes to custom_recipient, NOT global_collector
+    assert_eq!(token.balance(&custom_recipient) - recipient_before, 50);
+    assert_eq!(token.balance(&global_collector) - global_before, 0);
+}
+
+/// Scenario: archival-mid-config
+/// The merchant sets a custom fee recipient. A first charge extends the TTL
+/// on read. A second charge, after another large ledger gap, must still route
+/// to the custom recipient — proving that get_merchant_fee_recipient re-bumps
+/// the TTL on every charge so a configured recipient cannot lapse during
+/// steady-state operation.
+#[test]
+fn test_merchant_fee_recipient_ttl_refreshed_on_charge() {
+    let (env, contract_id, token_addr, user, merchant) = setup();
+    let client = FlowPayClient::new(&env, &contract_id);
+    let token = TokenClient::new(&env, &token_addr);
+
+    let admin = Address::generate(&env);
+    env.as_contract(&contract_id, || {
+        storage::set_admin(&env, &admin);
+    });
+
+    let global_collector = Address::generate(&env);
+    client.propose_fee(&global_collector, &500); // 5%
+    client.commit_fee();
+
+    let custom_recipient = Address::generate(&env);
+    client.set_merchant_fee_recipient(&merchant, &custom_recipient);
+
+    let interval: u64 = 86400;
+    client.subscribe(&user, &merchant, &1000, &interval, &token_addr, &None, &None);
+
+    // First charge: advances past half-TTL threshold so the read-time extend
+    // is meaningful (it resets the TTL clock from this point forward).
+    env.ledger().with_mut(|l| {
+        l.sequence_number += SUBSCRIPTION_TTL_LEDGERS / 2 + 1;
+        l.timestamp += interval + 1;
+    });
+
+    client.charge(&user); // read-time TTL bump happens here
+
+    // Second charge: another large ledger gap after the first charge's bump.
+    // If get_merchant_fee_recipient hadn't re-extended, the entry would now
+    // be past the original TTL and the key would have been archived.
+    env.ledger().with_mut(|l| {
+        l.sequence_number += SUBSCRIPTION_TTL_LEDGERS / 2 + 1;
+        l.timestamp += interval + 1;
+    });
+
+    let recipient_before = token.balance(&custom_recipient);
+    let global_before = token.balance(&global_collector);
+
+    client.charge(&user);
+
+    // Fee on second charge must still reach custom_recipient
+    assert_eq!(token.balance(&custom_recipient) - recipient_before, 50);
+    assert_eq!(token.balance(&global_collector) - global_before, 0);
+}
+
+/// Global fallback still applies when no custom recipient is configured.
+/// This ensures TTL extension in the write path doesn't interfere with the
+/// fee-routing resolution order (custom over global).
+#[test]
+fn test_merchant_fee_recipient_global_fallback_when_not_configured() {
+    let (env, contract_id, token_addr, user, merchant) = setup();
+    let client = FlowPayClient::new(&env, &contract_id);
+    let token = TokenClient::new(&env, &token_addr);
+
+    let admin = Address::generate(&env);
+    env.as_contract(&contract_id, || {
+        storage::set_admin(&env, &admin);
+    });
+
+    let global_collector = Address::generate(&env);
+    client.propose_fee(&global_collector, &500); // 5%
+    client.commit_fee();
+
+    // No custom recipient set for this merchant
+    let interval: u64 = 86400;
+    client.subscribe(&user, &merchant, &1000, &interval, &token_addr, &None, &None);
+
+    env.ledger().with_mut(|l| {
+        l.timestamp += interval + 1;
+    });
+
+    let global_before = token.balance(&global_collector);
+    let merchant_before = token.balance(&merchant);
+
+    client.charge(&user);
+
+    // Full fee goes to global_collector; merchant gets net
+    assert_eq!(token.balance(&global_collector) - global_before, 50);
+    assert_eq!(token.balance(&merchant) - merchant_before, 950);
 }
 
 #[test]
