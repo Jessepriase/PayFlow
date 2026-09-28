@@ -1,5 +1,8 @@
 use soroban_sdk::{Address, Env, Vec};
 
+use crate::caps::{
+    MAX_MERCHANT_SUB_COUNT_BATCH, REVENUE_DAY_PAGE_SIZE, TOP_MERCHANTS_PAGE_SIZE,
+};
 use crate::DataKey;
 
 /// Returns the total revenue accumulated for a merchant.
@@ -170,7 +173,7 @@ pub fn index_merchant(env: &Env, merchant: &Address) {
 /// Returns top N merchants ranked by active subscriber count in descending order.
 /// `limit` is capped at 20; panics with `BatchTooLarge` if exceeded.
 pub fn get_top_merchants_by_subs(env: &Env, limit: u32) -> Vec<(Address, u32)> {
-    if limit > 20 {
+    if limit > TOP_MERCHANTS_PAGE_SIZE {
         env.panic_with_error(crate::errors::ContractError::BatchTooLarge);
     }
     if limit == 0 {
@@ -278,8 +281,6 @@ pub fn get_merchant_revenue_day(env: &Env, merchant: &Address, day: u64) -> i128
     env.storage().persistent().get(&key).unwrap_or(0i128)
 }
 
-const MAX_MERCHANT_SUB_COUNT_BATCH: u32 = 50;
-
 /// Returns active subscriber counts for multiple merchants in a single call.
 /// Capped at 50 merchants; panics with `BatchTooLarge` above that.
 /// Returns `(addr, 0)` for merchants with no recorded count.
@@ -335,7 +336,7 @@ pub fn get_merchant_revenue_day_page(
     offset: u32,
     limit: u32,
 ) -> Vec<(u64, i128)> {
-    if limit > 30 {
+    if limit > REVENUE_DAY_PAGE_SIZE {
         env.panic_with_error(crate::errors::ContractError::BatchTooLarge);
     }
 

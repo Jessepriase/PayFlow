@@ -20,7 +20,9 @@ mod charge_exec;
 mod errors;
 mod events;
 mod fee;
-mod grace;mod merchant_stats;
+mod grace;
+mod limits;
+mod merchant_stats;
 mod migration;
 mod min_interval;
 mod referral;
@@ -146,14 +148,15 @@ pub enum DataKey {
 // ─────────────────────────────────────────────────────────────
 
 pub const SUBSCRIPTION_TTL_LEDGERS: u32 = 6307200; // ~1 year (assuming 5s blocks)
-pub const MAX_BATCH_PAUSE_SUBSCRIPTIONS: u32 = 25;
-/// Default cap for the admin whitelist batch entrypoints. Overridable at
-/// runtime via `set_max_whitelist_batch_size`, bounded by `MAX_BATCH_SIZE_CEILING`.
-pub const MAX_WHITELIST_BATCH_SIZE: u32 = 50;
-/// Hard ceiling shared by every admin-configurable batch limit. Configured
-/// limits are never allowed above this value, so batches stay bounded even if
-/// an admin key is compromised.
-pub const MAX_BATCH_SIZE_CEILING: u32 = 200;
+
+pub use caps::{
+    MAX_BATCH_PAUSE_SUBSCRIPTIONS, MAX_BATCH_SIZE_CEILING, MAX_MERCHANT_SUB_COUNT_BATCH,
+    MAX_WHITELIST_BATCH_SIZE, REVENUE_DAY_PAGE_SIZE, SUBSCRIBER_PAGE_SIZE, TOP_MERCHANTS_PAGE_SIZE,
+};
+
+/// The default cap for the admin batch charge/extend entrypoints, sourced from
+/// [`caps::DEFAULT_BATCH_SIZE`] so there is exactly one place to change it.
+pub use caps::DEFAULT_BATCH_SIZE as MAX_BATCH_SIZE;
 pub const GLOBAL_MAX_VOLUME_PER_HOUR: i128 = 50_000_000_000_000; // 50 trillion stroops
 pub const HOUR_IN_SECONDS: u64 = 3600;
 pub const MAX_AMOUNT: i128 = 100_000_000_000;
@@ -170,17 +173,6 @@ pub const MAX_SUBSCRIPTION_AMOUNT: i128 = 100_000_000_000_000;
 /// 400 years (≈ 12 623 040 000 s) is far beyond any real billing cycle and keeps
 /// all timestamp arithmetic safely within the representable `u64` range for any
 /// foreseeable ledger timestamp. Mirrors the `MAX_SUBSCRIPTION_AMOUNT` precedent.
-pub const MAX_SUBSCRIPTION_INTERVAL: u64 = 12_623_040_000; // 400 years in seconds
-/// Maximum permitted subscription billing interval (seconds).
-///
-/// Rationale: Soroban timestamps are `u64` Unix seconds. Adding a near-`u64::MAX`
-/// interval to `last_charged` overflows, which aborts the charge call and, inside
-/// `batch_charge`, can abort or force-skip the whole batch — a self-inflicted DoS.
-///
-/// 400 years in seconds (≈ 12_623_040_000) is far beyond any commercially
-/// meaningful billing cycle and keeps `last_charged + interval` safely within the
-/// representable `u64` range for any realistic ledger timestamp.
-/// Mirror of `MAX_SUBSCRIPTION_AMOUNT` precedent (see above).
 pub const MAX_SUBSCRIPTION_INTERVAL: u64 = 12_623_040_000; // 400 years in seconds
 
 // ─────────────────────────────────────────────────────────────
@@ -407,7 +399,7 @@ impl FlowPay {
     }
 
     pub fn get_batch_charge_estimate(env: Env, users: Vec<Address>) -> Vec<ChargeResult> {
-        if users.len() > 200 {
+        if users.len() > caps::MAX_BATCH_SIZE_CEILING {
             env.panic_with_error(ContractError::BatchTooLarge);
         }
         let mut results: Vec<ChargeResult> = Vec::new(&env);
@@ -960,7 +952,9 @@ impl FlowPay {
     pub fn batch_pause_subscriptions(env: Env, users: Vec<Address>) {
         admin::require_admin(&env);
 
-        let max_batch: u32 = 25;
+        // Deliberately not configurable and not the same knob as
+        // `get_max_batch_size`. See docs/limits.md.
+        let max_batch: u32 = caps::MAX_BATCH_PAUSE_SUBSCRIPTIONS;
         if users.len() > max_batch {
             env.panic_with_error(ContractError::BatchTooLarge);
         }
@@ -1529,7 +1523,7 @@ impl FlowPay {
     /// `offset >= count` or `limit == 0`.
     pub fn get_subscriber_page(env: Env, offset: u64, limit: u32) -> Vec<Address> {
         let count = subscription_count::get_subscriber_index_size(&env);
-        let cap: u32 = if limit > 50 { 50 } else { limit };
+        let cap: u32 = caps::effective_page_size(Some(limit), SUBSCRIBER_PAGE_SIZE);
         let mut result = Vec::new(&env);
         if offset >= count || cap == 0 {
             return result;
@@ -1557,7 +1551,7 @@ impl FlowPay {
         limit: u32,
         exclude_lapsed: Option<bool>,
     ) -> Vec<Address> {
-        if limit > 50 {
+        if limit > SUBSCRIBER_PAGE_SIZE {
             env.panic_with_error(ContractError::BatchTooLarge);
         }
         let size = subscription_count::get_subscriber_index_size(&env);
@@ -2248,7 +2242,7 @@ impl FlowPay {
     /// call, preventing unbounded iteration even on sparse indexes.
     pub fn get_active_subscriber_page(env: Env, offset: u64, limit: u32) -> Vec<Address> {
         let count = subscription_count::get_subscriber_index_size(&env);
-        let cap: u32 = if limit > 50 { 50 } else { limit };
+        let cap: u32 = caps::effective_page_size(Some(limit), SUBSCRIBER_PAGE_SIZE);
         let mut result = Vec::new(&env);
         if offset >= count || cap == 0 {
             return result;

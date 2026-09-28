@@ -7,21 +7,26 @@ use crate::grace;
 use crate::validation;
 use crate::{DataKey, Subscription};
 
-pub const MAX_BATCH_SIZE: u32 = 50;
+pub use crate::caps::DEFAULT_BATCH_SIZE as MAX_BATCH_SIZE;
 
 // ─────────────────────────────────────────────────────────────
 // Decode-compatibility note
 // ─────────────────────────────────────────────────────────────
 // `ChargeResult` is decoded off-chain by keepers, alert scripts
-// (alert-failed-charges.ts), and indexers.  Its discriminant
-// layout is:
+// (alert-failed-charges.ts), and indexers.  It is a Soroban
+// `#[contracttype]` unit-only enum, so on the wire each variant is
+// an `scvU32` carrying this discriminant — NOT an `scvSymbol`.
+// Its layout is:
 //
-//   Charged            = 0
-//   Skipped            = 1
-//   NoSubscription     = 2
-//   Inactive           = 3
-//   Paused             = 4
-//   GracePeriodElapsed = 5
+//   Charged             = 0
+//   Skipped             = 1
+//   NoSubscription      = 2
+//   Inactive            = 3
+//   Paused              = 4
+//   GracePeriodElapsed  = 5
+//   AllowanceInsufficient = 6
+//
+// The full wire-format description lives in `docs/charge-results.md`.
 //
 // When adding new variants ALWAYS append at the end so existing
 // off-chain parsers continue to recognise the original codes.
@@ -224,9 +229,6 @@ pub fn batch_cancel(env: &Env, users: Vec<Address>) -> Vec<CancelResult> {
 
         results.push_back(result);
     }
-
-    results
-}
 
     results
 }
