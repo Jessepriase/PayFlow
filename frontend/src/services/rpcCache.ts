@@ -5,6 +5,9 @@
  *   1. Collapsing concurrent calls with the same key into one in-flight Promise.
  *   2. Returning cached results for sequential reads within the TTL window.
  *   3. Capping the cache at MAX_CACHE_SIZE entries via LRU eviction.
+ *
+ * Cache keys are scoped by the active RPC endpoint (#1067) so a response
+ * fetched from one endpoint is never served to a caller on another endpoint.
  */
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -14,6 +17,39 @@ export const DEFAULT_TTL_MS = 5_000;
 
 /** Maximum number of entries kept in the LRU cache. */
 const MAX_CACHE_SIZE = 100;
+
+/** localStorage key under which the custom RPC URL is persisted. */
+const CUSTOM_RPC_KEY = "flowpay_custom_rpc_url";
+
+/** Sentinel used when no custom endpoint is configured. */
+const DEFAULT_ENDPOINT = "__default__";
+
+// ── Endpoint resolution ───────────────────────────────────────────────────────
+
+/**
+ * Return a stable identifier for the currently-active RPC endpoint.
+ *
+ * Reads the same localStorage key that `RpcHealthContext` writes to, so the
+ * cache key changes the instant the user switches endpoints. Falls back to a
+ * sentinel when running without a window (SSR/tests) or when localStorage
+ * is unavailable.
+ */
+export function getActiveEndpointId(): string {
+  if (typeof window === "undefined") return DEFAULT_ENDPOINT;
+  try {
+    const stored = window.localStorage.getItem(CUSTOM_RPC_KEY);
+    if (!stored) return DEFAULT_ENDPOINT;
+    const parsed = JSON.parse(stored);
+    return typeof parsed === "string" && parsed.length > 0 ? parsed : DEFAULT_ENDPOINT;
+  } catch {
+    return DEFAULT_ENDPOINT;
+  }
+}
+
+/** Compose the final cache key: `<endpoint>|<caller-key>`. */
+function scopedKey(key: string): string {
+  return `${getActiveEndpointId()}|${key}`;
+}
 
 // ── Internal data structures ──────────────────────────────────────────────────
 
@@ -72,7 +108,8 @@ function lruSet<T>(key: string, entry: CacheEntry<T>): void {
 
 /**
  * Wraps an async factory function `fn` with:
- *   - **In-flight deduplication**: concurrent calls sharing the same `key`
+ *   - **Endpoint-scoped keys**: entries are isolated per active RPC endpoint.
+ *   - **In-flight deduplication**: concurrent calls sharing the same key
  *     receive the same Promise without invoking `fn` more than once.
  *   - **TTL caching**: successful results are cached for `ttlMs` milliseconds
  *     (default 5 s).  Reads within that window never call `fn`.
@@ -80,6 +117,7 @@ function lruSet<T>(key: string, entry: CacheEntry<T>): void {
  *
  * @param key   Unique string that identifies this request (include all
  *              arguments that affect the result, e.g. `"getSubscription:GABC…"`).
+ *              The active RPC endpoint is prepended automatically.
  * @param fn    Zero-argument async factory that performs the actual network call.
  * @param ttlMs How long (ms) a successful result should be cached.
  *              Defaults to {@link DEFAULT_TTL_MS} (5 000 ms).
@@ -89,14 +127,16 @@ export function dedupedCall<T>(
   fn: () => Promise<T>,
   ttlMs: number = DEFAULT_TTL_MS
 ): Promise<T> {
+  const scoped = scopedKey(key);
+
   // 1. Cache hit — return without touching the network.
-  const cached = lruGet<T>(key);
+  const cached = lruGet<T>(scoped);
   if (cached !== undefined && Date.now() < cached.expiresAt) {
     return Promise.resolve(cached.value);
   }
 
   // 2. In-flight deduplication — join the existing Promise.
-  const existing = inFlight.get(key) as Promise<T> | undefined;
+  const existing = inFlight.get(scoped) as Promise<T> | undefined;
   if (existing !== undefined) {
     return existing;
   }
@@ -104,24 +144,34 @@ export function dedupedCall<T>(
   // 3. Cold call — invoke `fn`, register in-flight, populate cache on success.
   const promise: Promise<T> = fn().then(
     (value) => {
-      inFlight.delete(key);
-      lruSet<T>(key, { value, expiresAt: Date.now() + ttlMs });
+      inFlight.delete(scoped);
+      lruSet<T>(scoped, { value, expiresAt: Date.now() + ttlMs });
       return value;
     },
     (err: unknown) => {
-      inFlight.delete(key);
+      inFlight.delete(scoped);
       throw err;
     }
   );
 
-  inFlight.set(key, promise as Promise<unknown>);
+  inFlight.set(scoped, promise as Promise<unknown>);
   return promise;
 }
 
-// ── Test helpers (not part of the public API surface) ────────────────────────
-
-/** Clear all cache entries and in-flight requests.  Intended for tests only. */
-export function _clearCacheForTesting(): void {
+/**
+ * Clear all cached entries and any in-flight requests.
+ *
+ * Call this when the active RPC endpoint changes so responses fetched from
+ * the previous endpoint cannot be served to callers on the new one.
+ */
+export function clearCache(): void {
   cache.clear();
   inFlight.clear();
+}
+
+// ── Test helpers (kept for backward-compatibility with existing tests) ────────
+
+/** @deprecated Use {@link clearCache}. Retained for existing test suites. */
+export function _clearCacheForTesting(): void {
+  clearCache();
 }
