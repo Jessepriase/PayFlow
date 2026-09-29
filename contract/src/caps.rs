@@ -3,8 +3,20 @@
 //! Every read/write path that bounds a batch or a page size must source its
 //! limit from this module so the operator-facing guarantees stay consistent
 //! and cannot drift between entrypoints (e.g. estimate vs. live charge).
+//!
+//! The operator-facing table built from these constants lives in
+//! `docs/limits.md`. If you change a value here, update that table in the
+//! same commit; `node scripts/emit-caps-table.mjs --check` fails the build's
+//! doc check if the two disagree.
+//!
+//! These values are re-exported at the crate root (`crate::MAX_BATCH_SIZE`,
+//! `crate::MAX_BATCH_SIZE_CEILING`, ...) so entrypoints can keep using the
+//! short paths they have always used.
 
 /// Default cap for the admin batch charge/cancel/pause entrypoints.
+///
+/// Re-exported as `crate::MAX_BATCH_SIZE`, which is what `batch.rs` and the
+/// existing call sites refer to.
 pub const DEFAULT_BATCH_SIZE: u32 = 50;
 
 /// Hard ceiling shared by every admin-configurable batch limit. Configured
@@ -19,6 +31,17 @@ pub const MAX_BATCH_PAUSE_SUBSCRIPTIONS: u32 = 25;
 /// runtime via `set_max_whitelist_batch_size`, bounded by
 /// [`MAX_BATCH_SIZE_CEILING`].
 pub const MAX_WHITELIST_BATCH_SIZE: u32 = 50;
+
+/// Cap for the admin merchant-subscriber-count batch entrypoint
+/// (`get_merchant_sub_counts`).
+pub const MAX_MERCHANT_SUB_COUNT_BATCH: u32 = 50;
+
+/// Page size cap for the subscriber-listing entrypoints
+/// (`get_subscriber_page`, `get_active_subscriber_page`, `get_next_charge_batch`).
+///
+/// The two `*_page` readers clamp silently; `get_next_charge_batch` panics
+/// `BatchTooLarge`. All three use the same number, so it lives here.
+pub const SUBSCRIBER_PAGE_SIZE: u32 = 50;
 
 /// Page size for per-day merchant revenue queries.
 pub const REVENUE_DAY_PAGE_SIZE: u32 = 30;

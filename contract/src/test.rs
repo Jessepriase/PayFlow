@@ -11686,6 +11686,9 @@ fn test_migration_v2_to_v3_populates_referrer() {
 // Off-chain parsers (keepers, alert-failed-charges.ts, indexers)
 // decode ChargeResult by variant index. These tests lock the
 // discriminant layout so a reorder or rename is caught in CI.
+//
+// The wire encoding is `scvU32(discriminant)`, in the order the
+// variants are declared in `batch.rs`. See `docs/charge-results.md`.
 
 /// The number of ChargeResult variants. If you add a new variant,
 /// update this count AND append the new variant at the end of the enum.
@@ -11703,6 +11706,7 @@ fn test_charge_result_variant_count() {
     let inactive: soroban_sdk::Val = ChargeResult::Inactive.into_val(&env);
     let paused: soroban_sdk::Val = ChargeResult::Paused.into_val(&env);
     let grace: soroban_sdk::Val = ChargeResult::GracePeriodElapsed.into_val(&env);
+    let allowance: soroban_sdk::Val = ChargeResult::AllowanceInsufficient.into_val(&env);
 
     // All variants must encode to distinct raw values
     let c = unsafe { core::mem::transmute::<soroban_sdk::Val, u64>(charged) };
@@ -11711,16 +11715,25 @@ fn test_charge_result_variant_count() {
     let i = unsafe { core::mem::transmute::<soroban_sdk::Val, u64>(inactive) };
     let p = unsafe { core::mem::transmute::<soroban_sdk::Val, u64>(paused) };
     let g = unsafe { core::mem::transmute::<soroban_sdk::Val, u64>(grace) };
+    let a = unsafe { core::mem::transmute::<soroban_sdk::Val, u64>(allowance) };
 
     assert_ne!(c, s, "Charged and Skipped must differ");
     assert_ne!(s, n, "Skipped and NoSubscription must differ");
     assert_ne!(n, i, "NoSubscription and Inactive must differ");
     assert_ne!(i, p, "Inactive and Paused must differ");
     assert_ne!(p, g, "Paused and GracePeriodElapsed must differ");
+    assert_ne!(g, a, "GracePeriodElapsed and AllowanceInsufficient must differ");
 
     // Lock the variant count — increase when a variant is appended.
-    let total_variants = 6;
-    assert_eq!(total_variants, 6);
+    //
+    // This count plus the declaration order in `batch.rs` *is* the on-the-wire
+    // contract: a `#[contracttype]` unit-only enum serialises as an scvU32
+    // holding the variant index, so off-chain decoders map 0..6 to the variant
+    // names in `docs/charge-results.md`. Reordering the enum is therefore a
+    // wire-breaking change even though the Rust still compiles. The exact
+    // discriminants are asserted off-chain by that doc's decoders.
+    let total_variants = 7;
+    assert_eq!(total_variants, 7);
 }
 
 /// Verify round-trip encoding for every variant.
@@ -11736,6 +11749,7 @@ fn test_charge_result_round_trip() {
         ChargeResult::Inactive,
         ChargeResult::Paused,
         ChargeResult::GracePeriodElapsed,
+        ChargeResult::AllowanceInsufficient,
     ];
 
     for variant in variants.iter() {
@@ -11753,6 +11767,10 @@ fn test_charge_result_partial_eq_identity() {
     assert_ne!(ChargeResult::Charged, ChargeResult::Skipped);
     assert_ne!(ChargeResult::NoSubscription, ChargeResult::Inactive);
     assert_ne!(ChargeResult::Paused, ChargeResult::GracePeriodElapsed);
+    assert_ne!(
+        ChargeResult::GracePeriodElapsed,
+        ChargeResult::AllowanceInsufficient
+    );
 }
 
 

@@ -1,6 +1,6 @@
 # Contract API Reference
 
-This document tracks the current public contract surface in [contract/src/lib.rs](../contract/src/lib.rs). For error codes, see [ERROR-CODES.md](./ERROR-CODES.md), which contains the CONTRACT-34 table. For events, see [EVENTS.md](./EVENTS.md). For the propose/commit and propose/accept pattern shared by `transfer_admin`/`accept_admin`, `propose_fee`/`commit_fee`, `propose_grace_period`/`commit_grace_period`, and `propose_upgrade`/`commit_upgrade`, see [architecture/two-step-auth.md](./architecture/two-step-auth.md).
+This document tracks the current public contract surface in [contract/src/lib.rs](../contract/src/lib.rs). For error codes, see [ERROR-CODES.md](./ERROR-CODES.md), which contains the CONTRACT-34 table. For events, see [EVENTS.md](./EVENTS.md). For the propose/commit and propose/accept pattern shared by `transfer_admin`/`accept_admin`, `propose_fee`/`commit_fee`, `propose_grace_period`/`commit_grace_period`, and `propose_upgrade`/`commit_upgrade`, see [architecture/two-step-auth.md](./architecture/two-step-auth.md). **For the batch-size and page-size limits enforced by the batch and pagination entrypoints, see [limits.md](./limits.md), which tabulates every cap from a single source of truth in [contract/src/caps.rs](../contract/src/caps.rs).**
 
 ---
 
@@ -1218,7 +1218,7 @@ Auth: none.
 
 Returns: `Vec<(Address, u32)>` (top N merchants ranked by active subscriber count in descending order).
 
-Panics: `ContractError::BatchTooLarge` if `limit > 20`.
+Panics: `ContractError::BatchTooLarge` if `limit > 20`. The 20 is `caps::TOP_MERCHANTS_PAGE_SIZE`; see [limits.md](./limits.md#pagination).
 
 CLI example:
 
@@ -1435,7 +1435,7 @@ A non-`Charged` result for one user never aborts the rest of the batch. Insuffic
 
 The public wrapper calls `ensure_contract_not_paused` first: a paused protocol panics `ContractPaused` (18) for the whole invoke (not a per-user result).
 
-Errors: `ContractError::BatchTooLarge` (20) if `users.len()` exceeds `get_max_batch_size` (default 50). Ordinary per-user outcomes are enum values.
+Errors: `ContractError::BatchTooLarge` (20) if `users.len()` exceeds `get_max_batch_size` (default 50, ceiling 200). Ordinary per-user outcomes are enum values. Full cap table: [limits.md](./limits.md#batch-operations).
 
 Keeper ops: [`KEEPER.md`](./KEEPER.md).
 
@@ -1463,7 +1463,7 @@ get_batch_charge_estimate(env: Env, users: Vec<Address>) -> Vec<ChargeResult>
 
 **Success behavior:** for each user, missing sub → `NoSubscription`. If paused, `try_auto_resume` may persist an auto-resume. Then `precheck_charge` runs. If that returns `Ok`, the estimate reads SAC `allowance(user, contract)` against gross `sub.amount` and returns `Charged` or `AllowanceInsufficient`.
 
-**Errors:** `ContractError::BatchTooLarge` (20) if `users.len() > 200` (hardcoded; not `get_max_batch_size`). Ordinary per-user outcomes are enum values, not panics.
+**Errors:** `ContractError::BatchTooLarge` (20) if `users.len() > 200` (hardcoded; not `get_max_batch_size`). Ordinary per-user outcomes are enum values, not panics. Note this is the shared ceiling, so it is higher than the default live charge cap: see [limits.md](./limits.md#batch-operations).
 
 **Operational caveats (from `lib.rs`):**
 
@@ -2013,7 +2013,7 @@ end = min(offset + effective_limit, ordered_history.len())
 return ordered_history[offset..end]
 ```
 
-`limit` is silently capped at 12 — passing `limit: 100` is safe and simply returns everything available. `offset` is never validated against the history length beyond the empty-result check above; there is no `IndexOutOfBounds`-style error anywhere in this path.
+`limit` is silently capped at 12 — passing `limit: 100` is safe and simply returns everything available. This 12 is a retention length (`MAX_HISTORY`), not a batch or page cap; see [limits.md](./limits.md#pagination). `offset` is never validated against the history length beyond the empty-result check above; there is no `IndexOutOfBounds`-style error anywhere in this path.
 
 > **`ascending` parameter.** Passing `ascending = true` returns records in oldest-to-newest order. Passing `ascending = false` returns records in newest-to-oldest order (most recent first).
 

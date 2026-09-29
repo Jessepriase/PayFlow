@@ -40,6 +40,8 @@ interface FailedChargeData {
   user?: string;
   reason?: string;
   amount?: number | string;
+  /** `batch_charge_skips` map key; present when the row is a summary event. */
+  allowance_insufficient?: number;
 }
 
 interface FailedChargeEntry {

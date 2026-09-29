@@ -178,10 +178,6 @@ export async function onboardMerchant(config: SorobanConfig, server: Server, add
     };
   }
 
-  const tx = await invokeContract(config, server, "whitelist_batch_add", [
-    vecAddressToScVal([address]),
-  ]);
-  const verified = await isMerchantWhitelisted(address);
   const tx = await invokeContract(config, server, "whitelist_batch_add", [vecAddressToScVal([address])]);
   const verified = await isMerchantWhitelisted(config, server, address);
   if (!verified) {
@@ -233,7 +229,6 @@ async function main(): Promise<void> {
   });
   const server = createServer(config);
 
-  const addresses = args.batchFile ? await loadBatchAddresses(args.batchFile) : [args.address as string];
   const outcomes: MerchantOutcome[] = [];
   let hadExecutionError = false;
 

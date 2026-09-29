@@ -21,6 +21,7 @@
 import { DatabaseSync } from "node:sqlite";
 import { writeFileSync } from "node:fs";
 import { logger } from "./logger";
+import { fileURLToPath } from "node:url";
 
 interface EventRow {
   timestamp: number;
@@ -91,7 +92,7 @@ function main() {
     // Fallback: use total subscriber count from events
     const totalRow = db
       .prepare(
-        "SELECT COUNT(DISTINCT json_extract(data, '$.user')) as n FROM events WHERE event_name = 'subscribed'",
+        "SELECT COUNT(DISTINCT json_extract(raw_data, '$.user')) as n FROM events WHERE event_name = 'subscribed'",
       )
       .get() as { n: number };
     const fallbackTotal = totalRow?.n ?? 0;

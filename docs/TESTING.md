@@ -279,7 +279,7 @@ If every checkbox passes, the full flow is verified end-to-end. Any failure here
 
 ## Keeper Testing
 
-The reference keeper implementation in [`docs/KEEPER.md`](KEEPER.md#running-the-reference-keeper) is Python and illustrative — the `invoke_read`, `invoke_batch_charge`, and `check_balance` functions are left as stubs for you to fill in with your chosen Soroban SDK bindings. Whether you're testing that reference pattern or your own keeper implementation, the same two-mode approach applies.
+The reference keeper implementation in [`docs/KEEPER.md`](KEEPER.md#running-the-keeper) is Python and illustrative — the `invoke_read`, `invoke_batch_charge`, and `check_balance` functions are left as stubs for you to fill in with your chosen Soroban SDK bindings. Whether you're testing that reference pattern or your own keeper implementation, the same two-mode approach applies.
 
 ### Dry-run mode
 
@@ -308,7 +308,7 @@ Run this against your testnet deployment (populated via [`scripts/testnet-setup.
 
 ### Live mode with monitoring
 
-Once dry-run output looks correct, run the keeper against testnet in live mode (`dry_run=False`) with the monitoring described in [`docs/KEEPER.md`](KEEPER.md#monitoring-and-alerting) active:
+Once dry-run output looks correct, run the keeper against testnet in live mode (`dry_run=False`) with the monitoring described in [`docs/KEEPER.md`](KEEPER.md#metrics-and-monitoring) active:
 
 - Watch the keeper's own logs for per-address `ChargeResult`s (`Charged`, `Skipped`, `GracePeriodElapsed`, etc.).
 - Independently confirm charges landed by running [`scripts/watch-events.ts`](../scripts/watch-events.ts) against the same contract and cross-checking `charged` event counts against the keeper's own "charged" tally for the cycle.
