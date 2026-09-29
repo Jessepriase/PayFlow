@@ -31,7 +31,7 @@ interface Props {
  * Lists longer than MAX_BATCH_WHITELIST are blocked at submit with a warning.
  */
 export default function BatchWhitelistPanel({ adminKey, onSign, isAdmin }: Props) {
-  const { toasts, addToast, removeToast } = useToast();
+  const { toasts, addToast, removeToast, pauseToast, resumeToast } = useToast();
   const tx = useTransaction();
 
   const [rawInput, setRawInput] = useState("");
@@ -88,7 +88,12 @@ export default function BatchWhitelistPanel({ adminKey, onSign, isAdmin }: Props
       aria-labelledby="batch-whitelist-heading"
       style={{ opacity: isAdmin ? 1 : 0.5 }}
     >
-      <ToastContainer toasts={toasts} onRemove={removeToast} />
+      <ToastContainer
+        toasts={toasts}
+        onRemove={removeToast}
+        onPause={pauseToast}
+        onResume={resumeToast}
+      />
 
       <header className="mb-3">
         <h4 id="batch-whitelist-heading" className="text-base font-semibold">

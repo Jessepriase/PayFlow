@@ -56,6 +56,7 @@ function scopedKey(key: string): string {
 interface CacheEntry<T> {
   value: T;
   expiresAt: number; // Date.now() + ttlMs
+  updatedAt: number; // Date.now()
 }
 
 /**
@@ -145,7 +146,11 @@ export function dedupedCall<T>(
   const promise: Promise<T> = fn().then(
     (value) => {
       inFlight.delete(scoped);
-      lruSet<T>(scoped, { value, expiresAt: Date.now() + ttlMs });
+      lruSet<T>(scoped, {
+        value,
+        expiresAt: Date.now() + ttlMs,
+        updatedAt: Date.now(),
+      });
       return value;
     },
     (err: unknown) => {
@@ -169,9 +174,22 @@ export function clearCache(): void {
   inFlight.clear();
 }
 
-// ── Test helpers (kept for backward-compatibility with existing tests) ────────
+/**
+ * Returns the timestamp (ms) of the last successful fetch for a given key,
+ * or null if the key is not in the cache.
+ *
+ * Note: the lookup uses the caller-supplied key, not the endpoint-scoped key.
+ * If multiple endpoints are active in the same tab, only the currently-active
+ * endpoint's entry will match.
+ */
+export function getCacheUpdatedAt(key: string): number | null {
+  const entry = cache.get(scopedKey(key));
+  return entry ? entry.updatedAt : null;
+}
 
-/** @deprecated Use {@link clearCache}. Retained for existing test suites. */
+// ── Test helpers ──────────────────────────────────────────────────────────────
+
+/** Clear all cache entries and in-flight requests.  Intended for tests only. */
 export function _clearCacheForTesting(): void {
   clearCache();
 }

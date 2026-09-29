@@ -49,7 +49,10 @@ function main() {
     console.error("--db <path> required");
     process.exit(1);
   }
-  if (!dbPath) { logger.error("--db <path> required"); process.exit(1); }
+  if (!dbPath) {
+    logger.error("--db <path> required");
+    process.exit(1);
+  }
 
   const db = new DatabaseSync(dbPath, { open: true });
 
@@ -66,7 +69,7 @@ function main() {
   for (const row of rows) {
     let fee = 0n;
     try {
-      const parsed = JSON.parse(row.data) as Record<string, unknown>;
+      const parsed = JSON.parse(row.raw_data) as Record<string, unknown>;
       fee = BigInt(String(parsed.fee ?? "0"));
     } catch {
       /* skip malformed rows */
@@ -99,8 +102,7 @@ function main() {
     writeFileSync(out, json);
     console.log(`Wrote report to ${out}`);
   } else process.stdout.write(json + "\n");
-  if (out) { writeFileSync(out, json); logger.info(`Wrote report to ${out}`); }
-  else process.stdout.write(json + "\n");
 }
 
-main();
+const isMain = process.argv[1] === fileURLToPath(import.meta.url);
+if (isMain) main();

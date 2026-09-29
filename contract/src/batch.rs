@@ -6,7 +6,7 @@ use crate::events::BatchChargeSkipsEventData;
 use crate::grace;
 use crate::validation;
 use crate::{DataKey, Subscription};
-// sync trigger
+
 pub const MAX_BATCH_SIZE: u32 = 50;
 
 // ─────────────────────────────────────────────────────────────
@@ -224,6 +224,9 @@ pub fn batch_cancel(env: &Env, users: Vec<Address>) -> Vec<CancelResult> {
 
         results.push_back(result);
     }
+
+    results
+}
 
     results
 }

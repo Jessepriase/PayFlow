@@ -24,6 +24,7 @@ import ToastContainer from "../Toast";
 interface Props {
   adminKey: string;
   onSign: (xdr: string) => Promise<string>;
+  gatePassed?: boolean;
 }
 
 type ValidationPhase = "idle" | "loading" | "success" | "error";
@@ -40,9 +41,9 @@ function ViolationList({ items, prefix }: { items: string[]; prefix: string }) {
   );
 }
 
-export default function SubscriptionRepairPanel({ adminKey, onSign }: Props) {
+export default function SubscriptionRepairPanel({ adminKey, onSign, gatePassed = true }: Props) {
   const { isAdmin, adminAddress, loading: adminLoading, error: adminError } = useAdmin(adminKey);
-  const { toasts, addToast, removeToast } = useToast();
+  const { toasts, addToast, removeToast, pauseToast, resumeToast } = useToast();
   const repairTx = useTransaction();
 
   const [userAddress, setUserAddress] = useState("");
@@ -64,7 +65,8 @@ export default function SubscriptionRepairPanel({ adminKey, onSign }: Props) {
 
   const validationMessages = report ? collectValidationMessages(report) : [];
   const hasFailures = report ? hasValidationFailures(report) : false;
-  const canRepair = isAdmin && hasFailures && !!validatedAddress && repairTx.status !== "pending";
+  const canRepair =
+    isAdmin && gatePassed && hasFailures && !!validatedAddress && repairTx.status !== "pending";
 
   const runValidation = useCallback(async () => {
     const trimmed = userAddress.trim();
@@ -122,7 +124,12 @@ export default function SubscriptionRepairPanel({ adminKey, onSign }: Props) {
 
   return (
     <section className="subscription-repair-panel" aria-labelledby="subscription-repair-heading">
-      <ToastContainer toasts={toasts} onRemove={removeToast} />
+      <ToastContainer
+        toasts={toasts}
+        onRemove={removeToast}
+        onPause={pauseToast}
+        onResume={resumeToast}
+      />
 
       <header className="mb-4">
         <h3 id="subscription-repair-heading" className="text-lg font-semibold">
@@ -140,15 +147,17 @@ export default function SubscriptionRepairPanel({ adminKey, onSign }: Props) {
         </div>
       )}
 
-      {!adminLoading && !isAdmin && (
+      {!adminLoading && (!isAdmin || !gatePassed) && (
         <div className="network-warning mb-4" role="alert">
           <span>🔒</span>
           <span>
-            {adminError
-              ? adminError
-              : adminAddress
-                ? "Connected wallet is not the contract admin. Repair actions are disabled."
-                : "Admin credentials could not be verified. Repair actions are disabled."}
+            {!gatePassed
+              ? "Configuration gate failed. Repair actions are disabled."
+              : adminError
+                ? adminError
+                : adminAddress
+                  ? "Connected wallet is not the contract admin. Repair actions are disabled."
+                  : "Admin credentials could not be verified. Repair actions are disabled."}
           </span>
         </div>
       )}
