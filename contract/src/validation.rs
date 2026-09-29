@@ -69,6 +69,9 @@ pub fn validate_interval(env: &Env, interval: u64) {
     if interval < crate::min_interval::get_min_interval(env) {
         env.panic_with_error(ContractError::IntervalTooShort);
     }
+    if interval > crate::MAX_SUBSCRIPTION_INTERVAL {
+        env.panic_with_error(ContractError::IntervalExceedsMaximum);
+    }
 }
 
 #[allow(dead_code)]
@@ -87,7 +90,10 @@ pub fn require_active_subscription(env: &Env, active: bool) {
 
 #[allow(dead_code)]
 pub fn require_charge_interval_elapsed(env: &Env, now: u64, last_charged: u64, interval: u64) {
-    if now < last_charged + interval {
+    let next = last_charged
+        .checked_add(interval)
+        .unwrap_or_else(|| env.panic_with_error(ContractError::ArithmeticOverflow));
+    if now < next {
         env.panic_with_error(ContractError::IntervalNotElapsed);
     }
 }

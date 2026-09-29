@@ -8,9 +8,11 @@
     "typecheck": "cd frontend && npm ci && npm exec -- tsc --noEmit",
     "typecheck:scripts": "cd scripts && npx tsc --noEmit",
     "test:scripts": "cd scripts && npm install --prefer-offline && npm test",
-    "audit:contrast": "npm run typecheck",
+    "audit:contrast": "node scripts/contrast-check.mjs",
     "backend:typecheck": "cd contract && cargo check",
     "backend:test": "cd contract && cargo test",
+    "backend:vesting:typecheck": "cd vesting && cargo check",
+    "backend:vesting:test": "cd vesting && cargo test",
     "generate:types": "bash scripts/generate-types.sh",
     "test": "tsx --test tests/*.test.ts"
   },

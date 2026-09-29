@@ -3,9 +3,9 @@
   "files": [
     "deploy-pipeline.ts",
     "grace-period-monitor.ts",
-    "health-check.ts",
     "migrate-contract.ts",
     "pre-upgrade-check.ts",
+    "onboard-merchant.ts",
     "rotate-fee-collector.ts",
     "subscriber-health-dashboard.ts",
     "subscription-snapshot.ts",
@@ -14,4 +14,5 @@
     "testnet-setup.ts",
     "top-merchants.ts"
   ]
+  "files": []
 }

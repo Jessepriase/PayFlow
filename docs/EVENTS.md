@@ -67,6 +67,28 @@ Events related to subscription lifecycle transitions.
   }
   ```
 
+### pause_until
+
+- **Trigger**: `pause_until()` (bounded pause with auto-resume expiry)
+- **Topic keys**: `["pause_until", user_address]`
+- **Payload schema**:
+  ```rust
+  {
+    expiry_timestamp: u64,
+    ledger_sequence: u32
+  }
+  ```
+- **JSON example**:
+  ```json
+  {
+    "topic": ["pause_until", "GABC...XYZ"],
+    "data": {
+      "expiry_timestamp": 1720000000,
+      "ledger_sequence": 12345
+    }
+  }
+  ```
+
 ### resumed
 
 - **Trigger**: `resume()`
@@ -567,19 +589,6 @@ Events related to merchant management.
   {
     "topic": ["merchant_unfrozen", "GDEF...ABC"],
     "data": []
-  }
-  ```
-
-### merchant_withdrawal
-
-- **Trigger**: `withdraw_merchant_revenue()`
-- **Topic keys**: `["merchant_withdrawal", merchant_address]`
-- **Payload schema**: `amount: i128`
-- **JSON example**:
-  ```json
-  {
-    "topic": ["merchant_withdrawal", "GDEF...ABC"],
-    "data": 1000000000
   }
   ```
 

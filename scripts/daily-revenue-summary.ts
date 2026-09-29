@@ -206,7 +206,7 @@ async function main(): Promise<void> {
   }
 
   const query = db.prepare(
-    `SELECT event_name, data FROM events
+    `SELECT event_name, raw_data FROM events
      WHERE timestamp >= ? AND timestamp < ?`,
   );
 

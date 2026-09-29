@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
-import { STROOPS_PER_XLM, MIN_STROOPS, MAX_STROOPS } from "../constants";
+import { MIN_STROOPS, MAX_STROOPS, STROOPS_PER_XLM } from "../constants";
+import { stroopsToXlm, xlmToStroops } from "../utils/format";
 import { useDebounce } from "../hooks/useDebounce";
 import { useAmountDisplay } from "../hooks/useAmountDisplay";
 import { type AmountUnit } from "../utils/format";
@@ -13,7 +14,10 @@ interface Props {
   testId?: string;
 }
 
-function validate(
+// Keep the name used by existing amount-boundary callers.
+export { validateStroopInput as validateStroopAmount };
+
+export function validateStroopInput(
   raw: string,
   unit: AmountUnit,
   maxStroops: bigint = MAX_STROOPS
@@ -43,7 +47,7 @@ function validate(
       stroops: null,
       error:
         unit === "XLM"
-          ? `Must be at least ${Number(MIN_STROOPS) / STROOPS_PER_XLM} XLM`
+          ? `Must be at least ${stroopsToXlm(MIN_STROOPS)} XLM`
           : `Must be at least ${MIN_STROOPS} STROOP`,
     };
   }
@@ -52,7 +56,7 @@ function validate(
       stroops: null,
       error:
         unit === "XLM"
-          ? `Must be at most ${Number(maxStroops) / STROOPS_PER_XLM} XLM`
+          ? `Must be at most ${stroopsToXlm(maxStroops)} XLM`
           : `Must be at most ${maxStroops} STROOP`,
     };
   }
@@ -79,7 +83,7 @@ export default function StroopInput({
     if (initialValue !== undefined && initialValue !== null) {
       setConvertedStroops(initialValue);
       if (unit === "XLM") {
-        setValue((Number(initialValue) / STROOPS_PER_XLM).toString());
+        setValue(stroopsToXlm(initialValue));
       } else {
         setValue(initialValue.toString());
       }
@@ -90,7 +94,7 @@ export default function StroopInput({
   useEffect(() => {
     if (convertedStroops !== null) {
       if (unit === "XLM") {
-        setValue((Number(convertedStroops) / STROOPS_PER_XLM).toString());
+        setValue(stroopsToXlm(convertedStroops));
       } else {
         setValue(convertedStroops.toString());
       }
@@ -104,7 +108,7 @@ export default function StroopInput({
   }, [value, lastValue]);
 
   useEffect(() => {
-    const { stroops, error: err } = validate(debouncedValue, unit);
+    const { stroops, error: err } = validateStroopInput(debouncedValue, unit);
     setConvertedStroops(stroops);
     setError(err);
     onChange(stroops);
@@ -116,7 +120,7 @@ export default function StroopInput({
   }
 
   function handleBlur() {
-    const { stroops, error: err } = validate(value, unit);
+    const { stroops, error: err } = validateStroopInput(value, unit);
     setConvertedStroops(stroops);
     setError(err);
     onChange(stroops);
@@ -128,8 +132,7 @@ export default function StroopInput({
     if (unit === "XLM") {
       return `${stroops.toLocaleString("en-US")} STROOP`;
     } else {
-      const xlm = Number(stroops) / STROOPS_PER_XLM;
-      return `${xlm.toFixed(7)} XLM`;
+      return `${stroopsToXlm(stroops)} XLM`;
     }
   };
 

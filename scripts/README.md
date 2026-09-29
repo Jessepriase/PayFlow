@@ -927,10 +927,59 @@ This ops guide does not reproduce those playbooks:
 | RPC failover (runbook)            | Same file, section “RPC Failover Configuration”                                                                    |
 | TS DLQ replay helper              | [`replay-dlq.ts`](replay-dlq.ts) (default `DLQ_FILE=dlq/failed-batches.jsonl`)                                     |
 | Event backfill                    | [`docs/EVENT-DRIVEN-GUIDE.md`](../docs/EVENT-DRIVEN-GUIDE.md), [`replay-events.ts`](replay-events.ts)              |
+| **Charge outcome encoding**       | **[`docs/charge-results.md`](../docs/charge-results.md)** - `scvU32` discriminants, event `scvSymbol` keys, DLQ row schema, `null` vs failure |
 | Multi-endpoint RPC helper         | [`rpc-client.ts`](rpc-client.ts) (`RPC_URLS`) — **not** imported by the current keeper/indexer entrypoints         |
 
 `replay-dlq.ts` states that `keeper.ts` writes the JSONL DLQ. Confirm that path
 against the keeper you actually run before relying on it in production.
+
+### Reading charge outcomes
+
+If you are building anything that needs to know *which subscribers were charged*,
+read [`docs/charge-results.md`](../docs/charge-results.md) first. The short
+version, because it is easy to get wrong:
+
+- `batch_charge` returns a `Vec<ChargeResult>` where **each element is an
+  `scvU32` holding a variant discriminant 0-6** - *not* an `scvSymbol` and not
+  a string. Map `0..6` to `Charged`, `Skipped`, `NoSubscription`, `Inactive`,
+  `Paused`, `GracePeriodElapsed`, `AllowanceInsufficient`.
+- `scvSymbol` appears only in the `batch_charge_skips` event: as `topics[0]`, and
+  as the keys of the event's `scvMap` (snake_case field names such as
+  `not_due` and `allowance_insufficient`).
+- A DLQ row records a **transaction-level** abort. It carries no per-subscriber
+  outcome, `tx_xdr` is always `null`, and `error` is free-form text.
+- `AllowanceInsufficient` is a successful transaction that transferred nothing
+  for one subscriber. It never reaches the DLQ, so alerting on it has to come
+  from the event.
+
+The doc also carries drop-in TypeScript and Python decoders, a worked XDR
+example with hex and base64, and a list of the in-repo decoders that currently
+assume the wrong encoding.
+
+---
+
+## Module Map: Entrypoints, Shared Libraries, and Harnesses
+
+Every script in this directory falls into one of three categories:
+
+| Category | Purpose | Examples |
+| --- | --- | --- |
+| **Entrypoint** | Runnable CLI tools invoked by operators or CI. Have a `main` function, parse CLI args, and exit with a status code. | `keeper.ts`, `indexer.ts`, `metrics-server.ts`, `deploy-pipeline.ts`, `pre-upgrade-check.ts`, `top-merchants.ts`, `check-allowances.ts`, `alert-expiring-allowances.ts`, `health-check.ts`, `subscription-snapshot.ts`, `daily-revenue-summary.ts`, `export-merchant-report.ts`, `watch-events.ts`, `query-events.ts`, `onboard-merchant.ts`, `rotate-fee-collector.ts`, `migrate-contract.ts`, `replay-dlq.ts`, `replay-events.ts`, `backup-indexer-db.ts`, `grace-period-monitor.ts`, `alert-failed-charges.ts`, `batch-optimizer.ts`, `churn-analysis.ts`, `merchant-analytics.ts`, `subscriber-churn-report.ts`, `subscriber-health-dashboard.ts`, `topup-allowance.ts`, `fee-revenue-report.ts`, `audit-trail.ts`, `snapshot-diff.ts`, `renewal-forecast.ts`, `testnet-setup.ts`, `validate-config.ts`, `soroban-admin.ts` |
+| **Shared Library (`lib/`)** | Reusable helpers imported by entrypoints. No `main`; export pure functions or classes. | `lib/dry-run-stats.ts`, `lib/forecast.ts`, `lib/scval-helpers.ts` |
+| **Internal Harness** | Benchmarking, testing, or development tools not meant for production operations. | `keeper-benchmark.ts`, `watch-events.ts` (also entrypoint), `contrast-check.mjs`, `lint-duplicates.ts`, `lint-duplicates.mjs`, `generate-types.sh` |
+
+### Shared Helper Locations
+
+| Helper | Location | Purpose |
+| --- | --- | --- |
+| ScVal encoding/decoding | `lib/scval-helpers.ts` | Soroban Value (ScVal) serialization helpers for contract interaction |
+| Structured logging | `logger.ts` | JSON/human log formatter with child context binding |
+| Configuration parsing | `config.ts` | Zod schema for env vars, deprecation alias handling (`KEEPER_SECRET`→`SECRET_KEY`, `NETWORK_PASSTHRASE`→`NETWORK_PASSPHRASE`) |
+| RPC client with failover | `rpc-client.ts` | Multi-endpoint RPC client (`RPC_URLS`) |
+| Dry-run statistics | `lib/dry-run-stats.ts` | Aggregation of `ChargeResult` pages for keeper dry-run reports |
+| Forecasting utilities | `lib/forecast.ts` | Renewal forecasting math |
+| Database schema | `db/schema.ts` | SQLite schema for indexer |
+| Node SQLite mock | `__tests__/support/node-sqlite.ts` | Test mock for `node:sqlite` |
 
 ---
 
@@ -941,6 +990,15 @@ Out of scope for this ops-guide revision. Existing helpers include (non-exhausti
 `health-check.ts`, `subscription-snapshot.ts`, `daily-revenue-summary.ts`,
 `export-merchant-report.ts`, `pre-upgrade-check.ts`, `snapshot-diff.ts`,
 `deploy-pipeline.ts`, `replay-dlq.ts`, `replay-events.ts`.
+
+**Adding a charge-outcome column to an export?** The report scripts read the
+indexer's stored events, so they work from the `batch_charge_skips` aggregate
+rather than from per-subscriber results. If you need per-subscriber outcomes,
+read the return value, and get the encoding right:
+[`docs/charge-results.md`](../docs/charge-results.md). The two spellings of the
+same outcome differ (`Charged` vs `charged`, `Skipped` vs `not_due`), and mixing
+them up is the usual cause of an export that reports every subscriber as
+unpaid.
 
 ### Daily revenue delivery
 
@@ -1160,6 +1218,280 @@ Fixture files in `data/` enable testing without a live RPC connection:
 | `PROGRESS` | `1` | Set `0` to suppress progress output |
 
 ---
+
+## Undocumented operator scripts
+
+The eight maintenance tools below are the ones most likely to be needed during
+an incident, and all of them are runnable with nothing but the repository. Each
+entry gives the purpose, a command that works as written, and the environment
+variables it reads.
+
+| Script | Purpose |
+| ------ | ------- |
+| [`alert-expiring-allowances.ts`](#alert-expiring-allowancests) | Warn about token allowances about to expire |
+| [`churn-analysis.ts`](#churn-analysists) | Cohort retention, churn and projection report |
+| [`keeper-benchmark.ts`](#keeper-benchmarkts) | Measure keeper throughput and batch economics |
+| [`metrics-server.ts`](#metrics-serverts) | Prometheus exporter for keeper metrics |
+| [`migrate-contract.ts`](#migrate-contractts) | Run the storage schema migration |
+| [`onboard-merchant.ts`](#onboard-merchantts) | Whitelist merchants, singly or from a CSV |
+| [`renewal-forecast.ts`](#renewal-forecastts) | Project upcoming renewals per subscriber |
+| [`topup-allowance.ts`](#topup-allowancets) | Top up a subscriber's token allowance |
+
+Run these from the `scripts/` directory, or with `npx tsx scripts/<file>`
+from the repository root. They are ESM TypeScript run with `tsx`, not
+`ts-node`; see [`docs/KEEPER.md`](../docs/KEEPER.md#runtime-and-invocation).
+
+Flags and environment variables at a glance:
+
+<!-- BEGIN undocumented-scripts -->
+| Script | Flags | Environment variables |
+| ------ | ----- | --------------------- |
+| `alert-expiring-allowances.ts` | `--dry-run`, `--file`, `--help` | `CONTRACT_ID`, `NETWORK_PASSPHRASE`, `ALERT_WINDOW_LEDGERS`, `CONCURRENCY`, `MAX_RETRIES`, `RETRY_BASE_MS`, `WEBHOOK_URL` |
+| `churn-analysis.ts` | `--format`, `--db`, `--out`, `--resubscription-logic` | `INDEXER_DB_PATH`, `INDEXER_DB` |
+| `keeper-benchmark.ts` | `--dry-run`, `--fixture`, `--simulate` | `CONTRACT_ID`, `KEEPER_SECRET_KEY`, `NETWORK_PASSPHRASE`, `RPC_URL` |
+| `metrics-server.ts` | none | `METRICS_PORT` |
+| `migrate-contract.ts` | `--dry-run` | `VITE_CONTRACT_ID`, `VITE_NETWORK_PASSPHRASE`, `VITE_RPC_URL` |
+| `onboard-merchant.ts` | `--batch`, `--contractId`, `--rpcUrl` | `MERCHANT_ONBOARD_WEBHOOK_URL` |
+| `renewal-forecast.ts` | `--db`, `--stdin`, `--json`, `--out` | `DATA_DIR`, `DB_FILE` |
+| `topup-allowance.ts` | `--simulate` | `CONTRACT_ID`, `TOKEN_ADDRESS`, `USER_ADDRESS`, `USER_SECRET`, `AMOUNT`, `EXPIRY_LEDGERS`, `NETWORK_PASSPHRASE`, `RPC_URL` |
+<!-- END undocumented-scripts -->
+
+`node scripts/gen-undocumented-scripts.mjs --check` fails if any flag or
+variable in that table stops matching the source, or if one of these sections
+disappears.
+
+### alert-expiring-allowances.ts
+
+Scans live subscriptions and warns about token allowances that are about to
+expire, so subscribers can be nudged before a charge starts failing with
+`AllowanceInsufficient`. See
+[`docs/charge-results.md`](../docs/charge-results.md) for what that outcome
+means.
+
+```bash
+# Scan and POST each alert to a webhook
+CONTRACT_ID=C... WEBHOOK_URL=https://hooks.example.com/payflow \
+  npx tsx alert-expiring-allowances.ts
+
+# See what would be sent, without sending it
+CONTRACT_ID=C... npx tsx alert-expiring-allowances.ts --dry-run
+
+# Write the alert list to a file instead of POSTing
+CONTRACT_ID=C... npx tsx alert-expiring-allowances.ts --file expiring.json
+
+# Flags and their defaults
+npx tsx alert-expiring-allowances.ts --help
+```
+
+| Variable | Default | Notes |
+| -------- | ------- | ----- |
+| `CONTRACT_ID` | - | Required. Deployed FlowPay contract ID. |
+| `NETWORK_PASSPHRASE` | testnet | Must match the deployment network. |
+| `ALERT_WINDOW_LEDGERS` | `17280` | How far ahead to look. 17280 ledgers is roughly 24 hours at 5s blocks. |
+| `CONCURRENCY` | `5` | Subscriptions checked in parallel. |
+| `MAX_RETRIES` | `3` | RPC retries per subscription. |
+| `RETRY_BASE_MS` | `300` | Base backoff between retries. |
+| `WEBHOOK_URL` | - | Optional. Without it the script only logs. |
+
+### churn-analysis.ts
+
+Builds a cohort retention and churn report from the indexer's event database:
+30- and 90-day retention per monthly cohort, per-merchant churn, and a
+projection of next month's churn. Falls back to RPC if the SQLite database is
+absent, and says which source it used in `data_source`.
+
+```bash
+# Human-readable report from the local indexer DB
+npx tsx churn-analysis.ts
+
+# Machine-readable, to a file
+npx tsx churn-analysis.ts --format json --out churn.json
+
+# CSV for a spreadsheet
+npx tsx churn-analysis.ts --format csv --out churn.csv
+
+# Point at a specific indexer DB
+npx tsx churn-analysis.ts --db data/events.db
+
+# Treat a resubscribe as a retention win rather than a new subscriber
+npx tsx churn-analysis.ts --resubscription-logic retention
+```
+
+| Variable | Default | Notes |
+| -------- | ------- | ----- |
+| `INDEXER_DB_PATH` | `indexer.db` | Path to the indexer SQLite database. |
+| `INDEXER_DB` | `indexer.db` | Fallback when `INDEXER_DB_PATH` is unset. `--db` beats both. |
+
+`--format` accepts `json` or `csv`; anything else is ignored and the default
+is used. `--resubscription-logic` accepts `new` (default) or `retention`.
+
+### keeper-benchmark.ts
+
+Measures how the keeper behaves at different batch sizes, so you can pick a
+`BATCH_SIZE` from data rather than guesswork. Compares throughput, fee cost
+and simulation time across sizes.
+
+```bash
+# Run against the live contract, simulating only
+CONTRACT_ID=C... npx tsx keeper-benchmark.ts --dry-run
+
+# Repeat the sweep without submitting anything
+CONTRACT_ID=C... npx tsx keeper-benchmark.ts --simulate
+
+# Replay a recorded fixture, no RPC at all
+npx tsx keeper-benchmark.ts --fixture data/benchmarks/keeper-dryrun-report-sample.json
+```
+
+| Variable | Notes |
+| -------- | ----- |
+| `CONTRACT_ID` | Deployed FlowPay contract ID. Also read from `VITE_CONTRACT_ID`. |
+| `KEEPER_SECRET_KEY` | Signing key, for the non-dry-run path. Also read from `SECRET_KEY`. |
+| `NETWORK_PASSPHRASE` | Also read from `VITE_NETWORK_PASSPHRASE`. |
+| `RPC_URL` | Also read from `VITE_RPC_URL`. |
+
+Use `--fixture` to iterate on keeper changes with no network dependency, and
+[`docs/limits.md`](../docs/limits.md) to check the result against the caps
+the contract actually enforces.
+
+### metrics-server.ts
+
+Standalone Prometheus exporter for the metrics the keeper records. Useful when
+you want metrics without running a keeper cycle, or to confirm the exporter
+works before wiring up a full deployment.
+
+```bash
+# Default port 9090
+npx tsx metrics-server.ts
+
+# Somewhere else
+METRICS_PORT=9999 npx tsx metrics-server.ts
+
+# Then
+curl -s localhost:9090/metrics | grep flowpay
+```
+
+| Variable | Default | Notes |
+| -------- | ------- | ----- |
+| `METRICS_PORT` | `9090` | HTTP port serving `/metrics`. |
+
+The keeper starts this itself on the same port, so run this script **only** if
+you want the exporter without a keeper. Running both will collide on the port.
+See [Metrics server](#metrics-server) for the endpoint and Grafana wiring.
+
+### migrate-contract.ts
+
+Runs the contract's storage schema migration and verifies the schema version
+actually incremented. Used after a WASM upgrade that introduced a new schema
+version.
+
+```bash
+# Verify against the manifest, no network write
+npx tsx migrate-contract.ts --dry-run
+
+# For real, against a specific contract
+VITE_CONTRACT_ID=C... VITE_NETWORK_PASSPHRASE="Public Testnet Stellar Network ; September 2022" \
+  VITE_RPC_URL=https://soroban-testnet.stellar.org \
+  npx tsx migrate-contract.ts
+```
+
+| Variable | Notes |
+| -------- | ----- |
+| `VITE_CONTRACT_ID` | Contract to migrate. Also read from `CONTRACT_ID`. |
+| `VITE_NETWORK_PASSPHRASE` | Also read from `NETWORK_PASSPHRASE`. |
+| `VITE_RPC_URL` | Also read from `RPC_URL`. |
+
+The script exits non-zero if the schema version does not increment, which is
+the signal that the migration did not apply. Requires the admin key. See
+[`docs/DEPLOYMENT.md`](../docs/DEPLOYMENT.md#state-migration) for the wider
+procedure and [`pre-upgrade-check.ts`](pre-upgrade-check.ts) for the gate that
+should run first.
+
+### onboard-merchant.ts
+
+Adds merchants to the contract whitelist, either one at a time or in bulk from
+a CSV. Verifies the write landed before reporting success, and can notify a
+webhook.
+
+```bash
+# One merchant
+npx tsx onboard-merchant.ts GABC...
+
+# A CSV of addresses
+npx tsx onboard-merchant.ts --batch merchants.csv
+
+# Override the manifest, e.g. against testnet
+npx tsx onboard-merchant.ts GABC... --contractId C... --rpcUrl https://soroban-testnet.stellar.org
+```
+
+| Variable | Notes |
+| -------- | ----- |
+| `MERCHANT_ONBOARD_WEBHOOK_URL` | Optional. POSTs the outcome of each onboarding. |
+
+By default the contract ID, RPC URL and network come from
+`deployments/manifest.json`; the flags override that. The merchant key must
+authorize the write. The batch size is bounded by the contract's whitelist cap
+- see [`docs/limits.md`](../docs/limits.md#batch-operations) - and the script
+chunks to it.
+
+### renewal-forecast.ts
+
+Projects the next renewal date and amount for every active subscription, so you
+can see upcoming revenue and spot subscribers who will fail. Reads either a
+SQLite database or a JSON array on stdin.
+
+```bash
+# From the local database
+npx tsx renewal-forecast.ts --db data/subscriptions.db
+
+# From stdin, as JSON
+echo "$SUBSCRIPTIONS" | npx tsx renewal-forecast.ts --stdin
+
+# Machine-readable output to a file
+npx tsx renewal-forecast.ts --db data/subscriptions.db --json --out renewals.json
+```
+
+| Variable | Notes |
+| -------- | ----- |
+| `DATA_DIR` | Base directory for the default database location. |
+| `DB_FILE` | Explicit database path. `--db` beats both. |
+
+Subscribers that cannot be forecast, e.g. a non-positive subscription amount,
+get a `reason` of `validation_error` and a `null` renewal date rather than
+being dropped. Filter on that field to find accounts needing attention.
+
+### topup-allowance.ts
+
+Approves a token allowance on behalf of a subscriber, so their next charge
+succeeds. This is the direct remedy for
+`ChargeResult::AllowanceInsufficient`.
+
+```bash
+# Simulate only
+CONTRACT_ID=C... TOKEN_ADDRESS=C... USER_ADDRESS=G... \
+USER_SECRET=S... AMOUNT=5000000000 \
+  npx tsx topup-allowance.ts --simulate
+
+# For real
+CONTRACT_ID=C... TOKEN_ADDRESS=C... USER_ADDRESS=G... \
+USER_SECRET=S... AMOUNT=5000000000 \
+  npx tsx topup-allowance.ts
+```
+
+| Variable | Notes |
+| -------- | ----- |
+| `CONTRACT_ID` | Required. FlowPay contract that will spend the allowance. |
+| `TOKEN_ADDRESS` | Required. The SAC token being approved. |
+| `USER_ADDRESS` | Required. The subscriber's public key. |
+| `USER_SECRET` | Required to sign. The subscriber's own secret. |
+| `AMOUNT` | Required. Allowance in stroops. |
+| `EXPIRY_LEDGERS` | Optional. Approvals default to expiring. |
+| `NETWORK_PASSPHRASE`, `RPC_URL` | Standard overrides. |
+
+**This script needs the subscriber's secret key.** That is the subscriber's
+own authority to spend their balance, and it is not something an operator
+should hold in bulk. Prefer asking the subscriber to raise their own allowance;
+use this for a one-off rescue, and always with `--simulate` first. `AMOUNT`
+is in stroops, so 1 XLM is `10000000`.
 
 ## Environment variable reference
 

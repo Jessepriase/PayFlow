@@ -1,4 +1,4 @@
-/! Migration invariant tests for Issue #815.
+//! Migration invariant tests for Issue #815.
 //!
 //! Covers:
 //! - Invariant: subscribe/subscribe_with_metadata rejected when schema_version < CURRENT_VERSION
@@ -6,6 +6,13 @@
 //!   already-migrated slots
 //! - Idempotent: calling migrate at CURRENT_VERSION is always a no-op (no panic, no version bump)
 //! - Version advances correctly across v1→v2→v3 steps
+//!
+//! Snapshots: these tests generate `test_snapshots/test_migration/*.json` at
+//! test time (see `test_snapshots/README.md`). Run a full `cargo test` and
+//! commit the generated files with the change that produced them; delete a
+//! snapshot when a test here is renamed or removed. These tests assert on typed
+//! values (`get_schema_version`, `get_subscription`) rather than on recorded
+//! output, so the snapshot stays a record of side effects, not the expectation.
 #![cfg(test)]
 
 use super::*;
@@ -22,8 +29,8 @@ use soroban_sdk::{
 // ─────────────────────────────────────────────────────────────────────────────
 
 /// Minimal test setup: returns (env, contract_id, token_addr, admin, user, merchant).
-/// Whitelist is disabled. The contract is *not* initialised with a schema version so
-/// that individual tests can set it explicitly.
+/// Whitelist is disabled. `initialize()` sets schema_version to CURRENT_VERSION;
+/// individual tests that need a lower version call `set_version_directly` after setup.
 fn migration_setup() -> (Env, Address, Address, Address, Address, Address) {
     let env = Env::default();
     env.mock_all_auths();
@@ -38,7 +45,7 @@ fn migration_setup() -> (Env, Address, Address, Address, Address, Address) {
     let user = Address::generate(&env);
     let merchant = Address::generate(&env);
 
-    // Initialise contract (sets admin + token, schema_version stays at 0).
+    // Initialise contract (sets admin + token, schema_version = CURRENT_VERSION).
     let client = FlowPayClient::new(&env, &contract_id);
     client.initialize(&token_addr, &admin);
 
@@ -75,7 +82,8 @@ fn set_version_directly(env: &Env, contract_id: &Address, version: u32) {
 #[should_panic]
 fn test_migration_subscribe_blocked_at_version_0() {
     let (env, contract_id, token_addr, _admin, user, merchant) = migration_setup();
-    // version is 0 (default, never set)
+    // Simulate a pre-migration state by forcing version back to 0.
+    set_version_directly(&env, &contract_id, 0);
     let client = FlowPayClient::new(&env, &contract_id);
     client.subscribe(&user, &merchant, &1_000_000i128, &3600u64, &token_addr, &None, &None);
 }
@@ -159,9 +167,8 @@ fn run_migrate_empty(env: &Env, contract_id: &Address) {
 #[test]
 fn test_migration_paged_migrate_reaches_current_version() {
     let (env, contract_id, _token_addr, _admin, _user, _merchant) = migration_setup();
-    // schema_version starts at 0; no v1 blobs exist (fresh contract).
-
-    // Page 1: empty slice — advances version to 2 (v1→v2 step runs) then to 3 (v2→v3 step runs).
+    // schema_version is already CURRENT_VERSION after initialize(); calling migrate
+    // again is idempotent and must not panic.
     env.as_contract(&contract_id, || {
         let page1: Vec<Address> = Vec::new(&env);
         migration::migrate(&env, page1);
@@ -268,18 +275,23 @@ fn test_migration_idempotent_does_not_alter_current_subscriptions() {
 // get_schema_version public API
 // ─────────────────────────────────────────────────────────────────────────────
 
-/// get_schema_version returns 0 for a freshly initialised contract with no migration.
+/// get_schema_version returns CURRENT_VERSION for a freshly initialised contract.
+/// Fresh deployments do not need to run migrate() — initialize() sets the version.
 #[test]
 fn test_migration_get_schema_version_default_is_zero() {
     let (env, contract_id, _token_addr, _admin, _user, _merchant) = migration_setup();
     let client = FlowPayClient::new(&env, &contract_id);
-    assert_eq!(client.get_schema_version(), 0u32);
+    assert_eq!(client.get_schema_version(), CURRENT_VERSION);
 }
 
-/// get_schema_version advances to CURRENT_VERSION after migration completes.
+/// get_schema_version advances to CURRENT_VERSION after migration completes
+/// when starting from a downgraded version (simulating a post-upgrade state).
 #[test]
 fn test_migration_get_schema_version_after_full_migrate() {
     let (env, contract_id, _token_addr, _admin, _user, _merchant) = migration_setup();
+    // Simulate an upgraded contract with un-migrated storage.
+    set_version_directly(&env, &contract_id, 0);
+
     let client = FlowPayClient::new(&env, &contract_id);
     assert_eq!(client.get_schema_version(), 0u32);
 

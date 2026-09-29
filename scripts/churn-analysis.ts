@@ -460,19 +460,19 @@ async function main() {
       hasSqlite = true;
       const rows = db
         .prepare(
-          `SELECT event_name, data, timestamp FROM events
+          `SELECT event_name, raw_data, timestamp FROM events
            WHERE event_name IN ('subscribed', 'cancelled', 'cancelled_with_refund')
            ORDER BY timestamp ASC`,
         )
         .all() as Array<{
         event_name: string;
-        data: string;
+        raw_data: string;
         timestamp: number;
       }>;
 
       for (const r of rows) {
         try {
-          const parsed = JSON.parse(r.data);
+          const parsed = JSON.parse(r.raw_data);
           const user = parsed.user || parsed.address || "";
           const merchant = parsed.merchant || undefined;
           const amount = parsed.amount?.toString() || undefined;

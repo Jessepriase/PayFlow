@@ -219,7 +219,7 @@ soroban contract invoke \
 
 ### Likely cause
 
-The admin has activated the circuit breaker (`pause_contract`). This blocks all state-changing operations (subscribe, charge, pay_per_use, withdraw) as an emergency measure.
+The admin has activated the circuit breaker (`pause_contract`). This blocks all state-changing operations (subscribe, charge, pay_per_use) as an emergency measure.
 
 ### Diagnosis steps
 
@@ -322,7 +322,7 @@ If this returns a value (true or false), the contract is deployed on testnet.
 
 ### Prevention
 
-- Hard-code network passphrase validation in the frontend (`useNetworkCheck` hook).
+- Hard-code network passphrase validation in the frontend (`useNetworkStatus` hook).
 - Display the active network badge (`NetworkBadge` component) prominently.
 
 ---

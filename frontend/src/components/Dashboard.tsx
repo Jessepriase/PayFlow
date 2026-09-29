@@ -1,6 +1,7 @@
 import React, { useState, useRef, useCallback, useEffect, lazy, Suspense } from "react";
 import {
   buildPayPerUseTx,
+  buildPayPerUseToTx,
   getDailyLimit,
   getDailySpent,
   getDayStart,
@@ -28,6 +29,8 @@ import ReferralPanel from "./ReferralPanel";
 import ToastContainer from "./Toast";
 import EventFeed from "./EventFeed";
 import SubscriptionExport from "./SubscriptionExport";
+import LastUpdated from "./LastUpdated";
+import { getCacheUpdatedAt } from "../services/rpcCache";
 import { useSubscriptionSync } from "../hooks/useSubscriptionSync";
 import { usePolling } from "../hooks/usePolling";
 import { useToast } from "../hooks/useToast";
@@ -59,7 +62,7 @@ export default function Dashboard({
   isOffline = false,
 }: Props) {
   const { subscription: sub, loading, refresh } = useSubscriptionSync(userKey, refreshTrigger);
-  const { toasts, addToast, removeToast } = useToast();
+  const { toasts, addToast, removeToast, pauseToast, resumeToast } = useToast();
   const { status: rpcStatus, latencyMs: rpcLatency, error: rpcError } = useRpcHealth();
   const { isMobile } = useResponsive();
   const ppuTx = useTransaction();
@@ -124,7 +127,7 @@ export default function Dashboard({
   );
 
   const handlePayPerUse = useCallback(
-    async (stroops: bigint) => {
+    async (stroops: bigint, recipient?: string) => {
       if (isOffline) {
         announce("You're offline. Wallet actions are unavailable.");
         return;
@@ -132,7 +135,9 @@ export default function Dashboard({
       announce("Transaction submitted");
       try {
         const hash = await ppuTx.submit(async () => {
-          const xdr = await buildPayPerUseTx(userKey, stroops);
+          const xdr = recipient
+            ? await buildPayPerUseToTx(userKey, stroops, recipient)
+            : await buildPayPerUseTx(userKey, stroops);
           return onSign(xdr);
         });
         addToast("Paid!", "success", hash);
@@ -170,6 +175,16 @@ export default function Dashboard({
 
   return (
     <div className={`dashboard${isMobile ? " dashboard--mobile" : ""}`}>
+      <div className="flex-between mb-4">
+        <div>
+          <h2 className="text-xl font-bold">Subscriber Dashboard</h2>
+        </div>
+        <LastUpdated 
+          timestamp={getCacheUpdatedAt(`getSubscription:${userKey}`)} 
+          onRefresh={refresh} 
+        />
+      </div>
+
       {rpcStatus === "degraded" && (
         <div className="network-warning network-warning--degraded" role="alert">
           <span>⚠️</span>
@@ -302,7 +317,13 @@ export default function Dashboard({
         </>
       )}
 
-      <ToastContainer toasts={toasts} onRemove={removeToast} isPaused={isPaused} />
+      <ToastContainer
+        toasts={toasts}
+        onRemove={removeToast}
+        onPause={pauseToast}
+        onResume={resumeToast}
+        isPaused={isPaused}
+      />
 
       {showDailyLimit && sub?.active && (
         <DailyLimitModal

@@ -37,7 +37,7 @@
  *   data/benchmarks/keeper-bench-<timestamp>.json
  */
 
-import { writeFileSync, mkdirSync } from "node:fs";
+import { writeFileSync, mkdirSync, readFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import {
   Keypair,
@@ -70,6 +70,15 @@ const BATCH_SIZES = [10, 25, 50, 100, 200];
 const ITERATIONS_PER_BATCH = 5;
 const INTER_ITERATION_DELAY_MS = 200;
 
+export interface FixtureSubscriber {
+  address: string;
+  allowance?: string | number;
+  budget?: string | number;
+  amount?: string | number;
+  interval?: number;
+  last_charged?: number;
+}
+
 interface IterationResult {
   iteration: number;
   submissionLatencyMs: number;
@@ -78,6 +87,10 @@ interface IterationResult {
   cpuInstructionsPerSubscriber: number;
   feeCharged: number;
   success: boolean;
+  validTxCount: number;
+  failedTxCount: number;
+  totalSubscribers: number;
+  successfulSubscribersCount: number;
   error?: string;
 }
 
@@ -95,6 +108,8 @@ interface BatchBenchmarkResult {
   confirmationLatencyMs: PercentileStats;
   avgCpuInstructions: number;
   avgCpuInstructionsPerSubscriber: number;
+  totalValidTxCount: number;
+  totalFailedTxCount: number;
   iterations: IterationResult[];
 }
 
@@ -103,6 +118,7 @@ interface BenchmarkReport {
   mode: "simulation" | "testnet";
   contractId: string;
   rpcUrl: string;
+  fixturePath?: string;
   batchResults: BatchBenchmarkResult[];
 }
 
@@ -134,11 +150,46 @@ function computePercentiles(values: number[]): PercentileStats {
   };
 }
 
-function generateBenchmarkSubscribers(count: number): string[] {
-  const subscribers: string[] = [];
+function loadSubscriberFixture(fixturePath?: string): FixtureSubscriber[] {
+  const defaultPath = join(process.cwd(), "scripts", "testdata", "subs.json");
+  const targetPath = fixturePath || defaultPath;
+  if (existsSync(targetPath)) {
+    const raw = readFileSync(targetPath, "utf-8");
+    const data = JSON.parse(raw);
+    if (Array.isArray(data)) {
+      return data;
+    }
+  }
+  if (fixturePath) {
+    throw new Error(`Fixture file not found at: ${fixturePath}`);
+  }
+  return [];
+}
+
+function getBenchmarkSubscribers(
+  fixture: FixtureSubscriber[],
+  count: number,
+): FixtureSubscriber[] {
+  if (fixture.length > 0) {
+    const subscribers: FixtureSubscriber[] = [];
+    for (let i = 0; i < count; i++) {
+      subscribers.push(fixture[i % fixture.length]);
+    }
+    return subscribers;
+  }
+  const subscribers: FixtureSubscriber[] = [];
   for (let i = 0; i < count; i++) {
-    const kp = Keypair.random();
-    subscribers.push(kp.publicKey());
+    const buf = Buffer.alloc(32);
+    buf.writeUInt32BE(i + 1, 28);
+    const kp = Keypair.fromRawEd25519Seed(buf);
+    subscribers.push({
+      address: kp.publicKey(),
+      allowance: "50000000",
+      budget: "100000000",
+      amount: "10000000",
+      interval: 86400,
+      last_charged: 1700000000,
+    });
   }
   return subscribers;
 }
@@ -150,13 +201,15 @@ async function getBenchmarkSourceAccount(
   if (secretKey) {
     return Keypair.fromSecret(secretKey);
   }
-  return Keypair.random();
+  const buf = Buffer.alloc(32);
+  buf.writeUInt32BE(99999, 28);
+  return Keypair.fromRawEd25519Seed(buf);
 }
 
 async function runBenchmarkIteration(
   server: Server,
   signerKp: Keypair,
-  subscribers: string[],
+  subscribers: FixtureSubscriber[],
   simulate: boolean,
   iteration: number,
 ): Promise<IterationResult> {
@@ -170,9 +223,20 @@ async function runBenchmarkIteration(
     sourceAccount = new Account(signerKp.publicKey(), "0");
   }
 
+  // Validate subscriber addresses and budget constraints
+  const validAddresses: string[] = [];
+  for (const s of subscribers) {
+    try {
+      Address.fromString(s.address);
+      validAddresses.push(s.address);
+    } catch {
+      // Skip invalid address
+    }
+  }
+
   const usersScValVec = xdr.ScVal.scvVec(
-    subscribers.map((s) =>
-      nativeToScVal(Address.fromString(s), { type: "address" }),
+    validAddresses.map((addr) =>
+      nativeToScVal(Address.fromString(addr), { type: "address" }),
     ),
   );
 
@@ -194,19 +258,24 @@ async function runBenchmarkIteration(
     const cpuInsns = Number((simResult as any).cost?.cpuInsns ?? 150000);
     const minFee = Number((simResult as any).minResourceFee ?? BASE_FEE);
     const hasError = "error" in simResult && Boolean(simResult.error);
+    const isSuccess = !hasError && validAddresses.length > 0;
 
     return {
       iteration,
       submissionLatencyMs,
       confirmationLatencyMs: 0,
       cpuInstructions: cpuInsns,
-      cpuInstructionsPerSubscriber: Math.round(cpuInsns / subscribers.length),
+      cpuInstructionsPerSubscriber:
+        subscribers.length > 0 ? Math.round(cpuInsns / subscribers.length) : 0,
       feeCharged: minFee,
-      success: !hasError,
+      success: isSuccess,
+      validTxCount: isSuccess ? 1 : 0,
+      failedTxCount: isSuccess ? 0 : 1,
+      totalSubscribers: subscribers.length,
+      successfulSubscribersCount: isSuccess ? validAddresses.length : 0,
       error: hasError ? String((simResult as any).error) : undefined,
     };
   } else {
-    // Real submission on testnet
     if (!SECRET_KEY) {
       throw new Error(
         "KEEPER_SECRET_KEY / SECRET_KEY must be provided for real testnet benchmark execution.",
@@ -226,6 +295,10 @@ async function runBenchmarkIteration(
         cpuInstructionsPerSubscriber: 0,
         feeCharged: 0,
         success: false,
+        validTxCount: 0,
+        failedTxCount: 1,
+        totalSubscribers: subscribers.length,
+        successfulSubscribersCount: 0,
         error: `Submission status: ${sendResult.status}`,
       };
     }
@@ -239,29 +312,51 @@ async function runBenchmarkIteration(
     const confirmationLatencyMs = confirmTime - submitTime;
 
     const cpuInsns = 250000;
+    const isSuccess = statusResponse.status === "SUCCESS";
     return {
       iteration,
       submissionLatencyMs,
       confirmationLatencyMs,
       cpuInstructions: cpuInsns,
-      cpuInstructionsPerSubscriber: Math.round(cpuInsns / subscribers.length),
+      cpuInstructionsPerSubscriber:
+        subscribers.length > 0 ? Math.round(cpuInsns / subscribers.length) : 0,
       feeCharged: Number(BASE_FEE),
-      success: statusResponse.status === "SUCCESS",
+      success: isSuccess,
+      validTxCount: isSuccess ? 1 : 0,
+      failedTxCount: isSuccess ? 0 : 1,
+      totalSubscribers: subscribers.length,
+      successfulSubscribersCount: isSuccess ? validAddresses.length : 0,
     };
   }
 }
 
 async function main() {
   const args = process.argv.slice(2);
-  const simulate = args.includes("--simulate");
+  let fixturePath: string | undefined;
+  for (let i = 0; i < args.length; i++) {
+    if (args[i] === "--fixture" && i + 1 < args.length) {
+      fixturePath = args[i + 1];
+    } else if (args[i].startsWith("--fixture=")) {
+      fixturePath = args[i].split("=")[1];
+    }
+  }
+
+  const simulate = args.includes("--simulate") || args.includes("--dry-run");
+
+  const fixture = loadSubscriberFixture(fixturePath);
+  const resolvedFixturePath =
+    fixturePath || join("scripts", "testdata", "subs.json");
 
   console.log(`====================================================`);
   console.log(`FlowPay Keeper Performance Benchmark`);
   console.log(
-    `Mode: ${simulate ? "SIMULATION (--simulate)" : "TESTNET REAL SUBMISSION"}`,
+    `Mode: ${simulate ? "SIMULATION (--simulate / --dry-run)" : "TESTNET REAL SUBMISSION"}`,
   );
   console.log(`RPC Endpoint: ${RPC_URL}`);
   console.log(`Contract ID: ${CONTRACT_ID}`);
+  console.log(
+    `Fixture: ${fixture.length > 0 ? `${resolvedFixturePath} (${fixture.length} subscribers)` : "Deterministic fallback"}`,
+  );
   console.log(`====================================================\n`);
 
   const server = new Server(RPC_URL);
@@ -271,7 +366,7 @@ async function main() {
 
   for (const batchSize of BATCH_SIZES) {
     console.log(`Running benchmark for batch size: ${batchSize}...`);
-    const subscribers = generateBenchmarkSubscribers(batchSize);
+    const subscribers = getBenchmarkSubscribers(fixture, batchSize);
     const iterations: IterationResult[] = [];
 
     for (let iter = 1; iter <= ITERATIONS_PER_BATCH; iter++) {
@@ -285,7 +380,7 @@ async function main() {
         );
         iterations.push(res);
         console.log(
-          `  Iteration ${iter}/${ITERATIONS_PER_BATCH}: latency=${res.submissionLatencyMs}ms cpu_insns=${res.cpuInstructions} per_sub=${res.cpuInstructionsPerSubscriber}`,
+          `  Iteration ${iter}/${ITERATIONS_PER_BATCH}: latency=${res.submissionLatencyMs}ms cpu_insns=${res.cpuInstructions} per_sub=${res.cpuInstructionsPerSubscriber} valid_tx=${res.validTxCount} failed_tx=${res.failedTxCount}`,
         );
       } catch (err) {
         console.error(
@@ -300,6 +395,10 @@ async function main() {
           cpuInstructionsPerSubscriber: 0,
           feeCharged: 0,
           success: false,
+          validTxCount: 0,
+          failedTxCount: 1,
+          totalSubscribers: subscribers.length,
+          successfulSubscribersCount: 0,
           error: String(err),
         });
       }
@@ -319,6 +418,15 @@ async function main() {
       avgCpuInstructions / batchSize,
     );
 
+    const totalValidTxCount = iterations.reduce(
+      (acc, i) => acc + i.validTxCount,
+      0,
+    );
+    const totalFailedTxCount = iterations.reduce(
+      (acc, i) => acc + i.failedTxCount,
+      0,
+    );
+
     batchResults.push({
       batchSize,
       iterationsRun: iterations.length,
@@ -326,11 +434,13 @@ async function main() {
       confirmationLatencyMs: confirmationStats,
       avgCpuInstructions,
       avgCpuInstructionsPerSubscriber,
+      totalValidTxCount,
+      totalFailedTxCount,
       iterations,
     });
 
     console.log(
-      `  -> Batch ${batchSize} summary: submission_p50=${submissionStats.p50}ms cpu_per_sub=${avgCpuInstructionsPerSubscriber}\n`,
+      `  -> Batch ${batchSize} summary: submission_p50=${submissionStats.p50}ms cpu_per_sub=${avgCpuInstructionsPerSubscriber} valid_tx_total=${totalValidTxCount} failed_tx_total=${totalFailedTxCount}\n`,
     );
   }
 
@@ -339,6 +449,7 @@ async function main() {
     mode: simulate ? "simulation" : "testnet",
     contractId: CONTRACT_ID,
     rpcUrl: RPC_URL,
+    fixturePath: resolvedFixturePath,
     batchResults,
   };
 
@@ -359,3 +470,4 @@ main().catch((err) => {
   console.error("Keeper benchmark failed:", err);
   process.exit(1);
 });
+

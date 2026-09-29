@@ -159,7 +159,7 @@ const fixture = JSON.parse(readFileSync(fixturePath, "utf8")) as Fixture;
 console.log("\n=== Suite 1: aggregateExportByDay ===");
 
 {
-  const map = aggregateExportByDay(fixture.matching_export_entries as Parameters<typeof aggregateExportByDay>[0]);
+  const map = aggregateExportByDay(fixture.matching_export_entries as unknown as Parameters<typeof aggregateExportByDay>[0]);
 
   // Two charged events on 2026-03-01 → 10_000_000 + 5_000_000 = 15_000_000 vol
   const day1 = map.get("2026-03-01");
@@ -190,7 +190,7 @@ console.log("\n=== Suite 1: aggregateExportByDay ===");
   const nonBillingEntries = fixture.matching_export_entries.filter(
     (e) => (e as { event_type: string }).event_type === "subscribed",
   );
-  const nonBillingMap = aggregateExportByDay(nonBillingEntries as Parameters<typeof aggregateExportByDay>[0]);
+  const nonBillingMap = aggregateExportByDay(nonBillingEntries as unknown as Parameters<typeof aggregateExportByDay>[0]);
   assertEqual(nonBillingMap.size, 0, "subscribed-only entries produce no day buckets");
 }
 
@@ -236,7 +236,7 @@ console.log("\n=== Suite 2: aggregateIndexerByDay ===");
 console.log("\n=== Suite 3: reconcileAggregates — matching scenario ===");
 
 {
-  const exportEntries = fixture.matching_export_entries as Parameters<typeof aggregateExportByDay>[0];
+  const exportEntries = fixture.matching_export_entries as unknown as Parameters<typeof aggregateExportByDay>[0];
   const db = buildInMemoryDb(fixture.matching_indexer_rows);
 
   const exportByDay = aggregateExportByDay(exportEntries);
@@ -280,7 +280,7 @@ console.log("\n=== Suite 3: reconcileAggregates — matching scenario ===");
 console.log("\n=== Suite 4: reconcileAggregates — mismatch scenario ===");
 
 {
-  const exportEntries = fixture.mismatch_export_entries as Parameters<typeof aggregateExportByDay>[0];
+  const exportEntries = fixture.mismatch_export_entries as unknown as Parameters<typeof aggregateExportByDay>[0];
   const db = buildInMemoryDb(fixture.mismatch_indexer_rows);
 
   const exportByDay = aggregateExportByDay(exportEntries);

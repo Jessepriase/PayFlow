@@ -37,20 +37,11 @@ import {
   Networks,
   TransactionBuilder,
   BASE_FEE,
-  Address,
   nativeToScVal,
   xdr,
 } from "@stellar/stellar-sdk";
-import { Server } from "@stellar/stellar-sdk/rpc";
-import {
-  Contract,
-  Networks,
-  TransactionBuilder,
-  BASE_FEE,
-  Address,
-} from "@stellar/stellar-sdk";
 import { MultiEndpointServer } from "./rpc-client.js";
-import { logger as rootLogger } from "./logger";
+import { logger as rootLogger } from "./logger.js";
 
 // ── Configuration ────────────────────────────────────────────────────────────
 
@@ -404,26 +395,6 @@ async function main(): Promise<void> {
   let overallError: string | undefined;
 
   try {
-    // Call get_schema_version
-    const schemaResult = await simulateCall(server, "get_schema_version");
-    if (schemaResult === undefined || schemaResult === null) {
-      logger.error("get_schema_version returned no data", { status: "unhealthy", check: "get_schema_version" });
-      process.exit(1);
-    }
-
-    // Call get_active_count (active subscription count)
-    const countResult = await simulateCall(server, "get_active_count");
-    if (countResult === undefined || countResult === null) {
-      logger.error("get_active_count returned no data", { status: "unhealthy", check: "get_active_count" });
-      process.exit(1);
-    }
-
-    // Both calls succeeded with valid responses
-    logger.info("Contract health check passed", { status: "healthy" });
-    process.exit(0);
-  } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : String(err);
-    logger.error("Contract health check failed", { status: "unhealthy", error: message });
     // ── Shallow probes (always run) ───────────────────────────────────
 
     // Probe 1: get_schema_version
@@ -536,7 +507,7 @@ async function main(): Promise<void> {
       if (JSON_OUTPUT) {
         logJSON({
           status: "unhealthy",
-          mode: "deep",
+          mode: DEEP ? "deep" : "shallow",
           contract: CONTRACT_ID,
           timestamp: timestamp(),
           probes,

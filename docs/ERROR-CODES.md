@@ -34,7 +34,7 @@ Use the [quick-reference table](#quick-reference-table) for lookups, then jump t
 | 18   | `ContractPaused`            | State        | Op while protocol paused           |
 | 19   | `IntervalTooShort`          | Validation   | Interval below min floor           |
 | 20   | `BatchTooLarge`             | Limit        | Batch size above max               |
-| 21   | `ZeroBalanceAvailable`      | State        | Merchant withdraw with 0           |
+| 21   | `ZeroBalanceAvailable` (deprecated) | Compatibility | Legacy withdraw code; never emitted |
 | 22   | `MerchantFrozen`            | Auth         | Subscribe to frozen merchant       |
 | 23   | `NoPendingProposal`         | State        | Commit without proposal            |
 | 24   | `SubscriptionAlreadyActive` | State        | Transfer target already subscribed |
@@ -56,6 +56,9 @@ Use the [quick-reference table](#quick-reference-table) for lookups, then jump t
 | 41   | `CannotClearActiveSubscriber` | State      | Admin index repair of an active subscriber |
 | 42   | `SchemaMigrationRequired`   | State        | Stale schema — subscription writes denied until migrate |
 | 43   | `ResumeGraceLapsed`         | State        | Resume after grace period elapsed |
+| 44   | `AdminAlreadySet`           | State        | `set_initial_admin` after admin already stored |
+| 45   | `NoPendingAdmin`            | State        | `accept_admin` with no staged transfer |
+| 46   | `IntervalExceedsMaximum`    | Validation   | Interval above `MAX_SUBSCRIPTION_INTERVAL` (400 yr) |
 
 > **Compatibility:** code 18 (`ContractPaused`) is the sole canonical contract-paused error and is emitted by every pause guard. `ContractPausedError` remains a deprecated Rust enum variant at code 30 only for source/wire compatibility with clients that published that value; it is never emitted by current WASM. Code 31 is intentionally reserved and has no enum variant in the published map. Code 37 remains unassigned; new errors must use a new code and update this table, frontend handling, and mapping tests together. Source of truth: [`contract/src/errors.rs`](../contract/src/errors.rs).
 
@@ -101,7 +104,7 @@ Use the [quick-reference table](#quick-reference-table) for lookups, then jump t
 
 | Field               | Detail                                                      |
 | ------------------- | ----------------------------------------------------------- |
-| **When it occurs**  | `subscribe()` (or interval setters) receive `interval <= 0` |
+| **When it occurs**  | `subscribe()` (or interval setters) receive `interval <= 0`; also `set_min_interval(0)` |
 | **Immediate cause** | Interval failed the positive check                          |
 
 **Recovery steps**
@@ -171,6 +174,8 @@ Use the [quick-reference table](#quick-reference-table) for lookups, then jump t
 | ------------------- | ------------------------------------------------------------- |
 | **When it occurs**  | Any operational call before successful `initialize()`         |
 | **Immediate cause** | Admin/token (or related) config missing from instance storage |
+
+This is also the code every admin-gated entrypoint (`set_min_interval`, `set_max_batch_size`, `pause_contract`, whitelist and fee admin functions, …) returns when it is invoked before an admin has been stored, so clients can branch on `7` instead of matching a host panic string.
 
 **Recovery steps**
 
@@ -410,20 +415,16 @@ batch. See [`EVENTS.md`](EVENTS.md#batch_charge_skips).
 
 ---
 
-### 21 — `ZeroBalanceAvailable`
+### 21 — `ZeroBalanceAvailable` (legacy)
 
 | Field               | Detail                                                  |
 | ------------------- | ------------------------------------------------------- |
-| **When it occurs**  | `withdraw_merchant_revenue()` with zero accrued balance |
-| **Immediate cause** | Merchant revenue storage is empty/zero                  |
+| **When it occurs**  | Legacy / unused error variant (formerly emitted by `withdraw_merchant_revenue` before migration to non-custodial direct payouts). Kept for discriminant compatibility. |
+| **Immediate cause** | N/A — merchant revenue is non-custodial and settles directly on charge. |
 
 **Recovery steps**
 
-1. Confirm accrued revenue via merchant balance getters.
-2. Wait until successful charges have credited the merchant.
-3. Retry withdraw when balance > 0.
-
-**Prevention:** Disable withdraw CTA when displayed balance is zero.
+1. No action needed; charges settle directly into merchant wallets without withdrawal.
 
 ---
 
@@ -700,18 +701,32 @@ Follow the canonical operator procedure in [`DEPLOYMENT.md` — SchemaMigrationR
 
 ---
 
+### 46 — `IntervalExceedsMaximum`
+
+| Field               | Detail |
+| ------------------- | ------ |
+| **When it occurs**  | `subscribe()` or `subscribe_with_metadata()` is called with an `interval` > `MAX_SUBSCRIPTION_INTERVAL` (12 623 040 000 s ≈ 400 years). |
+| **Immediate cause** | `validate_interval` rejects the value before any state is written. |
+| **Why it exists**   | Soroban timestamps are `u64` Unix seconds. Adding a near-`u64::MAX` interval to `last_charged` overflows, causing every charge call for that subscription to abort — and inside `batch_charge` that abort can skip the entire batch (a self-inflicted DoS / keeper hazard). The cap keeps all timestamp arithmetic safe. |
+
+**Recovery steps**
+
+1. Reduce the interval to at most `12_623_040_000` (about 400 years).
+2. If you truly need a longer billing cycle (unusual), discuss protocol governance — the constant is a compile-time value in `lib.rs`.
+3. For **legacy subscriptions** created before this cap was enforced (e.g. via direct storage injection in tests), the subscription can still be cancelled via `cancel(user)`; it cannot be charged. Re-subscribe with a valid interval to restore chargeability.
+
+**Prevention:** Validate the interval on the client side before calling `subscribe`. The maximum is exported as `MAX_SUBSCRIPTION_INTERVAL` in the contract source and documented in [`docs/limits.md`](limits.md).
+
+---
+
 ## Error Categories
 
-| Category       | Codes                                                | Typical owners                |
-| -------------- | ---------------------------------------------------- | ----------------------------- |
-| Auth / access  | 8, 10, 22                                            | User + admin                  |
-| State          | 1, 4, 5, 7, 16, 17, 18, 21, 23, 24, 30, 36           | Deployer, user, admin, keeper |
-| Category       | Codes                                    | Typical owners                |
-| -------------- | ---------------------------------------- | ----------------------------- |
-| Auth / access  | 8, 10, 22                                | User + admin                  |
-| State          | 1, 4, 5, 7, 16, 17, 18, 21, 23, 24, 30, 36, 41, 42 | Deployer, user, admin, keeper |
-| Validation     | 2, 3, 11, 12, 13, 14, 19, 26, 27, 29, 32, 33, 34, 35 | Client / admin tooling        |
-| Limit / timing | 6, 9, 15, 20, 25, 28                                 | Keeper + user                 |
+| Category       | Codes                                                        | Typical owners                |
+| -------------- | ------------------------------------------------------------ | ----------------------------- |
+| Auth / access  | 8, 10, 22                                                    | User + admin                  |
+| State          | 1, 4, 5, 7, 16, 17, 18, 21, 23, 24, 30, 36, 41, 42, 44, 45 | Deployer, user, admin, keeper |
+| Validation     | 2, 3, 11, 12, 13, 14, 19, 26, 27, 29, 32, 33, 34, 35, 38, 39, 46 | Client / admin tooling   |
+| Limit / timing | 6, 9, 15, 20, 25, 28, 40                                     | Keeper + user                 |
 
 ---
 
@@ -742,6 +757,7 @@ Follow the canonical operator procedure in [`DEPLOYMENT.md` — SchemaMigrationR
 
 1. Check code:
    - `2` / `3` / `19` → fix amount/interval inputs.
+   - `46` → interval above the 400-year cap; reduce interval.
    - `8` → approve token allowance first (and fund balance).
    - `10` / `22` → merchant not allowed / frozen.
    - `11` → bad referrer.

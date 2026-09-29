@@ -116,9 +116,9 @@ function TxEntryRow({ entry }: TxEntryRowProps) {
         <div
           className="tx-queue-entry__error"
           role="alert"
-          style={{ background: "#451a03", borderColor: "#92400e" }}
+          style={{ background: "var(--color-warning-bg)", borderColor: "var(--color-warning)" }}
         >
-          <span className="text-sm" style={{ color: "#fbbf24" }}>
+          <span className="text-sm" style={{ color: "var(--color-warning-text)" }}>
             Interrupted — wallet closed before confirmation. Check explorer; if no recent tx, you
             may retry. Retrying will re-simulate before submitting.
           </span>

@@ -29,8 +29,13 @@ use crate::{extend_subscription_ttl, DataKey, MAX_AMOUNT, Subscription};
 ///   * Return enums differ (ChargeSimResult vs ChargeResult)
 ///     because ChargeResult has a stable discriminant layout
 ///     consumed by off-chain keepers/indexers and cannot be
-///     changed.  `into_sim_result` / `into_batch_result` map
-///     the shared precheck outcomes accordingly.
+///     changed.  `into_batch_result` maps the shared precheck
+///     outcomes to `ChargeResult` for the batch path, while
+///     `into_sim_result` maps them to `ChargeSimResult` for the
+///     simulate path.  `charge_result_from_precheck` resolves the
+///     `ProceedToAllowance` case into a `ChargeResult` (performing
+///     the allowance gate) which `ChargeResult::into_sim_result`
+///     then maps onto `ChargeSimResult`.
 ///   * Allowance / InsufficientAllowance handling is NOT part
 ///     of the shared precheck.  It belongs to Issue 001 and is
 ///     performed separately by each caller after this helper
@@ -83,6 +88,32 @@ impl DryRunSkipOutcome {
             DryRunSkipOutcome::ProceedToAllowance => ChargeResult::Charged,
         }
     }
+}
+
+/// Resolves the `ProceedToAllowance` outcome of `dry_run_skip_precheck` into
+/// the final `ChargeResult`, performing the allowance gate.
+///
+/// This is the single place where the simulate path constructs its
+/// `ChargeResult`, and the presence-invariant check is co-located here: the
+/// precheck only returns `ProceedToAllowance` when a subscription is present,
+/// so a `None` subscription alongside that outcome means the invariant is
+/// broken. That case now surfaces a typed `ChargeResult::NoSubscription`
+/// instead of aborting the whole call via `expect` — a broken invariant
+/// degrades to a per-subscription outcome, which matters most inside batches
+/// where one user's abort would sink every other user's charge.
+pub(crate) fn charge_result_from_precheck(
+    env: &Env,
+    user: &Address,
+    sub_after_precheck: Option<Subscription>,
+) -> ChargeResult {
+    let sub = match sub_after_precheck {
+        Some(sub) => sub,
+        None => return ChargeResult::NoSubscription,
+    };
+    if !validation::has_sufficient_allowance(env, &user, &sub.token, sub.amount) {
+        return ChargeResult::AllowanceInsufficient;
+    }
+    ChargeResult::Charged
 }
 
 /// Shared precheck covering the existing skip/pause/grace/inactive/
@@ -146,7 +177,7 @@ pub(crate) fn dry_run_skip_precheck(
     }
 
     let grace_period = grace::get_grace_period(env);
-    if grace_period > 0 && now > next + grace_period {
+    if grace_period > 0 && now > next.saturating_add(grace_period) {
         return (DryRunSkipOutcome::GracePeriodElapsed, None);
     }
 
@@ -176,7 +207,9 @@ pub enum ChargeSimResult {
 ///   * Returns `ChargeSimResult` (keeper-friendly enum).
 ///   * Missing subscriptions map to `ChargeSimResult::Inactive`.
 ///   * Allowance check performed locally after the shared precheck
-///     returns `ProceedToAllowance` (Issue 001 scope — do not move).
+///     returns `ProceedToAllowance` (Issue 001 scope — do not move);
+///     a broken presence invariant yields `ChargeResult::NoSubscription`
+///     (mapped to `Inactive`) rather than an abort.
 pub fn simulate_charge(env: &Env, user: Address) -> ChargeSimResult {
     let key = DataKey::Subscription(user.clone());
     let sub_opt: Option<Subscription> = env.storage().persistent().get(&key);
@@ -184,14 +217,12 @@ pub fn simulate_charge(env: &Env, user: Address) -> ChargeSimResult {
     let (outcome, sub_after_precheck) =
         dry_run_skip_precheck(env, &user, sub_opt, true);
 
-    if let DryRunSkipOutcome::ProceedToAllowance = outcome {
-        let sub = sub_after_precheck.expect("sub present when ProceedToAllowance");
-        if !validation::has_sufficient_allowance(env, &user, &sub.token, sub.amount) {
-            return ChargeSimResult::InsufficientAllowance;
+    match outcome {
+        DryRunSkipOutcome::ProceedToAllowance => {
+            charge_result_from_precheck(env, &user, sub_after_precheck).into_sim_result()
         }
+        other => other.into_sim_result(),
     }
-
-    outcome.into_sim_result()
 }
 
 /// Outcome of dry-running/simulating a `pay_per_use` / `pay_per_use_to` call.

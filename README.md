@@ -223,6 +223,15 @@ Stellar's Soroban platform uses state archiving — persistent storage entries h
 - Mainnet deployment checklist: [`docs/MAINNET-DEPLOYMENT.md`](docs/MAINNET-DEPLOYMENT.md)
 - Merchant Integration Cookbook: [`docs/MERCHANT-INTEGRATION.md`](docs/MERCHANT-INTEGRATION.md)
 
+### Operations quick-links
+
+For when something needs doing to a live deployment:
+
+- [Keeper runbook](docs/KEEPER.md) - runtime, flags and configuration for `keeper.ts`
+- [Charge outcome encoding](docs/charge-results.md) - what a `ChargeResult` is on the wire, and what the DLQ and export tooling should do with it
+- [Batch and pagination caps](docs/limits.md) - every size limit the contract enforces
+- [Operator scripts](scripts/README.md#undocumented-operator-scripts) - the maintenance tools: allowance alerts, churn analysis, migration, merchant onboarding, renewal forecasts, metrics
+
 ---
 
 ## Subscriber Churn Analysis Dashboard
@@ -282,3 +291,8 @@ To configure multi-endpoint failover and ensure high availability for all backen
 
 All operational backend scripts under the `/scripts` directory utilize a resilient `MultiEndpointServer` (implemented in `scripts/rpc-client.ts`) instead of the standard `Server` from `@stellar/stellar-sdk/rpc`.
 On first use, the client performs health and passphrase validation across all configured endpoints to ensure they belong to the expected Stellar network. Consistently failing endpoints are dynamically deprioritized. Upon failure, the script will log a warning and transparently retry the request using the next available endpoint.
+
+## Handsoff notes
+
+<!-- handsoff-issue-1038 -->
+- #1038: Report the effective volume cap override in get_contract_config

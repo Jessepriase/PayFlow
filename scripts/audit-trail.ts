@@ -284,19 +284,14 @@ async function* fetchEventStream(
     let hasMore = true;
 
     while (hasMore) {
-      const params: Record<string, unknown> = {
+      type GetEventsRequest = Parameters<typeof server.getEvents>[0];
+      const params: GetEventsRequest = {
         filters: [{ type: "contract", contractIds: [CONTRACT_ID] }],
         limit: EVENTS_PER_REQUEST,
+        ...(cursor ? { cursor } : { startLedger: batchStart }),
       };
-      if (cursor) {
-        params.cursor = cursor;
-      } else {
-        params.startLedger = batchStart;
-      }
 
-      const response = await server.getEvents(
-        params as Parameters<typeof server.getEvents>[0],
-      );
+      const response = await server.getEvents(params);
 
       for (const raw of response.events) {
         const eventLedger: number = (raw as unknown as RawEvent).ledger ?? 0;

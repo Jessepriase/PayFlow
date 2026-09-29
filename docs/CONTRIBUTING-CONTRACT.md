@@ -38,7 +38,7 @@ contract/src/
 │                             # (transfer_subscription_charge, transfer_pay_per_use),
 │                             # cumulative fee tracking, merchant fee recipient routing
 ├── grace.rs                  # Two-step grace period proposal/commit
-├── limits.rs                 # Placeholder — currently empty (single comment line)
+├── limits.rs                 # Limit documentation pointer (limits live in validation.rs / batch.rs)
 ├── merchant_stats.rs         # Per-merchant revenue tracking (cumulative, daily buckets,
 │                             # history Vec), subscriber counts, merchant index,
 │                             # top merchants ranking, revenue summaries
@@ -56,7 +56,7 @@ contract/src/
 ├── subscription_history.rs   # Per-user charge history (max 12 entries, circular buffer),
 │                             # paginated reads with ascending/descending
 ├── subscription_metadata.rs  # Short subscription labels (max 64 bytes)
-├── token.rs                  # UNRELATED — contains AcademyVestingContract (not used by FlowPay)
+├── token.rs                  # Note on token/vesting (AcademyVestingContract lives in vesting/ crate)
 ├── trial.rs                  # Trial period end computation and trial extension
 ├── upgrade.rs                # Two-step WASM upgrade (propose/commit),
 │                             # test-only direct upgrade
@@ -73,8 +73,8 @@ contract/src/
 - `lib.rs` only wires public contract functions to module helpers — no logic inline.
 - `bench.rs` is gated with `#[cfg(feature = "bench")]` in `lib.rs` — it is **not** compiled by `cargo test` unless you pass `--features bench`.
 - `test.rs` is gated with `#[cfg(test)]`.
-- `token.rs` contains an unrelated vesting contract and is not used by FlowPay. Do not add FlowPay logic to it.
-- `limits.rs` is an empty placeholder. Do not add logic there without first checking whether the behavior belongs in an existing module.
+- `AcademyVestingContract` lives in the separate `vesting/` package. The `flowpay` contract focuses exclusively on recurring subscriptions.
+- `limits.rs` documents limit architecture. Do not add isolated limit logic there; amount/interval validation belongs in `validation.rs`, batch limits in `batch.rs`, and spending limits in `spending_limit.rs`.
 
 ---
 

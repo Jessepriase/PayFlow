@@ -5,7 +5,6 @@ import { useRpcHealthContext } from "./context/RpcHealthContext";
 import SubscribeForm from "./components/SubscribeForm";
 import Dashboard from "./components/Dashboard";
 import RpcSettings from "./components/RpcSettings";
-import { useNetworkCheck } from "./hooks/useNetworkCheck";
 import { useNetworkStatus } from "./hooks/useNetworkStatus";
 import { useAdmin } from "./hooks/useAdmin";
 import { useContractId } from "./hooks/useContractId";
@@ -33,10 +32,15 @@ export default function App() {
   const [showRpcSettings, setShowRpcSettings] = useState(false);
 
   const isRpcFailing = !healthy || circuitOpen;
-  const { networkMatch, walletNetwork, isMainnet, requiresMainnetConfirm, confirmMainnet } =
-    useNetworkCheck();
+  const {
+    isOnline,
+    networkMatch,
+    walletNetwork,
+    isMainnet,
+    requiresMainnetConfirm,
+    confirmMainnet,
+  } = useNetworkStatus();
   const { valid: isContractIdValid, error: contractIdError } = useContractId();
-  const isOnline = useNetworkStatus();
   const { isAdmin } = useAdmin(publicKey);
   const { isPaused } = useContractPaused();
   // Dashboard/SubscribeForm/MerchantDashboard/admin panels each keep their own
@@ -116,10 +120,10 @@ export default function App() {
       {gateError && (
         <div
           className="card"
-          style={{ background: "#3b1f1f", marginBottom: 16, textAlign: "center" }}
+          style={{ background: "var(--color-danger-bg)", marginBottom: 16, textAlign: "center" }}
           data-testid="gate-warning"
         >
-          <p style={{ color: "#f87171", fontSize: 13 }}>
+          <p style={{ color: "var(--color-danger-text)", fontSize: 13 }}>
             ⚠ <strong>Configuration/Network Gate Warning:</strong> {gateError}
           </p>
         </div>
@@ -162,9 +166,13 @@ export default function App() {
       {isMainnet && requiresMainnetConfirm && (
         <div
           className="card"
-          style={{ background: "#3b1f1f", borderColor: "#7f1d1d", marginBottom: 16 }}
+          style={{
+            background: "var(--color-warning-bg)",
+            borderColor: "var(--color-warning)",
+            marginBottom: 16,
+          }}
         >
-          <p style={{ color: "#fbbf24", fontSize: 13, fontWeight: 600 }}>
+          <p style={{ color: "var(--color-warning-text)", fontSize: 13, fontWeight: 600 }}>
             ⚠ Mainnet mode — real funds at risk. Please confirm you intend to use Mainnet before
             continuing.
           </p>
@@ -195,7 +203,7 @@ export default function App() {
             {connecting ? "Connecting…" : "Connect Wallet"}
           </button>
           {error && (
-            <p role="alert" style={{ color: "#f87171", marginTop: 12, fontSize: 13 }}>
+            <p role="alert" style={{ color: "var(--color-danger)", marginTop: 12, fontSize: 13 }}>
               {error}
             </p>
           )}

@@ -39,6 +39,7 @@
  */
 
 import { readFileSync, writeFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import {
   Contract,
   Networks,
@@ -505,9 +506,6 @@ export async function collectHealth(): Promise<{
 
       const health = await getSubscriptionHealth(address);
       const allowance = sub.active ? await getAllowance(address, sub.token) : 0n;
-      const allowance = sub.active
-        ? await getAllowance(address, sub.token)
-        : 0n;
       const lowAllowance =
         sub.active && !sub.paused && allowance < sub.amount * 2n;
 
@@ -531,7 +529,6 @@ export async function collectHealth(): Promise<{
       if (health === null && sub.active && !sub.paused) {
         chargeDue = now >= sub.last_charged + sub.interval;
       }
-      const trialActive = health?.trial_active ?? sub.last_charged > now;
 
       const ttlRemaining =
         meta.liveUntilLedger != null
@@ -754,8 +751,6 @@ function toCsv(details: SubscriberHealth[]): string {
         d.expiring_ttl,
         d.requires_restore,
       ].join(",")
-        d.token,
-      ].join(","),
     );
   }
   return lines.join("\n") + "\n";
@@ -847,7 +842,8 @@ async function main(): Promise<void> {
 // JSON_OUTPUT flag for error path
 const JSON_OUTPUT = !(getArg("--format") ?? "json").match(/^table$/i);
 
-main().catch((err) => {
+const isMain = process.argv[1] === fileURLToPath(import.meta.url);
+if (isMain) main().catch((err) => {
   console.error(`Fatal error: ${err instanceof Error ? err.message : err}`);
   process.exit(EXIT_HARD_FAILURE);
 });

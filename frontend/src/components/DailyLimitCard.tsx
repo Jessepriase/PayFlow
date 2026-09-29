@@ -131,7 +131,7 @@ export default function DailyLimitCard({ userKey, refreshTrigger, onOpen }: Prop
                       progress >= 100
                         ? "var(--color-danger)"
                         : progress >= 80
-                          ? "#f59e0b"
+                          ? "var(--color-warning)"
                           : "var(--color-primary)",
                     transition: "width 0.2s ease",
                   }}
@@ -147,7 +147,11 @@ export default function DailyLimitCard({ userKey, refreshTrigger, onOpen }: Prop
           )}
 
           {isUncappedWithWindow && (
-            <p className="text-xs" style={{ marginTop: 8, color: "#f59e0b" }} role="status">
+            <p
+              className="text-xs"
+              style={{ marginTop: 8, color: "var(--color-warning)" }}
+              role="status"
+            >
               Limit expired but window still active — spending is currently uncapped until you set a
               new limit.
             </p>

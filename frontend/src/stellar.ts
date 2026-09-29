@@ -169,6 +169,25 @@ export async function buildPayPerUseTx(user: string, amount: bigint): Promise<st
   return buildTx(user, "pay_per_use", [addressVal(user), nativeToScVal(amount, { type: "i128" })]);
 }
 
+/**
+ * Builds a `pay_per_use_to` transaction that routes a one-shot payment to an
+ * alternate `recipient` instead of the subscription's merchant. The contract
+ * re-validates the merchant whitelist for the explicit recipient (panics with
+ * `MerchantNotWhitelisted` when the whitelist is enabled and the recipient is
+ * not listed), so callers should surface that error clearly on failure.
+ */
+export async function buildPayPerUseToTx(
+  user: string,
+  amount: bigint,
+  recipient: string
+): Promise<string> {
+  return buildTx(user, "pay_per_use_to", [
+    addressVal(user),
+    nativeToScVal(amount, { type: "i128" }),
+    addressVal(recipient),
+  ]);
+}
+
 export async function buildPauseTx(user: string): Promise<string> {
   return buildTx(user, "pause", [addressVal(user)]);
 }
@@ -892,9 +911,6 @@ export function getMerchantRevenue(merchant: string): Promise<bigint> {
   });
 }
 
-export async function buildWithdrawMerchantRevenueTx(merchant: string): Promise<string> {
-  return buildTx(merchant, "withdraw_merchant_revenue", [addressVal(merchant)]);
-}
 
 export async function getBalance(
   publicKey: string,

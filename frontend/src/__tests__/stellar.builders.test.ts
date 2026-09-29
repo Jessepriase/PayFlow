@@ -61,10 +61,8 @@ beforeAll(async () => {
   stellar = await import("../stellar");
 });
 
-let callSpy: MockInstance<
-  Parameters<typeof Contract.prototype.call>,
-  ReturnType<typeof Contract.prototype.call>
->;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+let callSpy: any;
 
 beforeAll(() => {
   callSpy = vi.spyOn(Contract.prototype, "call");
@@ -432,6 +430,59 @@ describe("validateSubscription", () => {
 
     await expect(stellar.validateSubscription(ADMIN, USER_A)).rejects.toThrow(
       "validate_subscription: no subscription"
+    );
+  });
+});
+
+// ── buildPayPerUseTx ──────────────────────────────────────────────────────────
+
+describe("buildPayPerUseTx", () => {
+  it("calls pay_per_use with the user's address and the amount", async () => {
+    simulateTransactionMock().mockResolvedValue({ result: {} });
+
+    const result = await stellar.buildPayPerUseTx(USER_A, 5_0000000n);
+
+    expect(result).toBe("signed-xdr-stub");
+    expect(getAccountMock()).toHaveBeenCalledWith(USER_A);
+    expect(callSpy).toHaveBeenCalledTimes(1);
+
+    const [method, arg0, arg1] = callSpy.mock.calls[0];
+    expect(method).toBe("pay_per_use");
+    expect((arg0 as any).toXDR("base64")).toBe(addressVal(USER_A).toXDR("base64"));
+    expect((arg1 as any).toXDR("base64")).toBe(
+      nativeToScVal(5_0000000n, { type: "i128" }).toXDR("base64")
+    );
+  });
+});
+
+// ── buildPayPerUseToTx ────────────────────────────────────────────────────────
+
+describe("buildPayPerUseToTx", () => {
+  it("calls pay_per_use_to with the user's address, amount, and recipient", async () => {
+    simulateTransactionMock().mockResolvedValue({ result: {} });
+
+    const result = await stellar.buildPayPerUseToTx(USER_A, 5_0000000n, MERCHANT_A);
+
+    expect(result).toBe("signed-xdr-stub");
+    expect(getAccountMock()).toHaveBeenCalledWith(USER_A);
+    expect(callSpy).toHaveBeenCalledTimes(1);
+
+    const [method, arg0, arg1, arg2] = callSpy.mock.calls[0];
+    expect(method).toBe("pay_per_use_to");
+    expect((arg0 as any).toXDR("base64")).toBe(addressVal(USER_A).toXDR("base64"));
+    expect((arg1 as any).toXDR("base64")).toBe(
+      nativeToScVal(5_0000000n, { type: "i128" }).toXDR("base64")
+    );
+    expect((arg2 as any).toXDR("base64")).toBe(addressVal(MERCHANT_A).toXDR("base64"));
+  });
+
+  it("rejects when simulation returns an error (e.g. recipient not whitelisted)", async () => {
+    simulateTransactionMock().mockResolvedValue({
+      error: "pay_per_use_to: error(Contract, #10)",
+    });
+
+    await expect(stellar.buildPayPerUseToTx(USER_A, 5_0000000n, MERCHANT_A)).rejects.toThrow(
+      "pay_per_use_to: error(Contract, #10)"
     );
   });
 });
