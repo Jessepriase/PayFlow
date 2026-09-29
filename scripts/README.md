@@ -551,6 +551,13 @@ into a local SQLite database. On restart it resumes from `meta.last_ledger`
 so the same events are not re-fetched as duplicates (upsert key
 `tx_hash:event_name`).
 
+**Pause lifecycle events:** the indexer should track `paused`, `resumed`, and
+`subscription_auto_resumed` events to maintain accurate pause state for each
+subscriber. `pause_until` subscriptions auto-resume on the next `charge` or
+`batch_charge` after their expiry — the expiry timestamp is in the `paused`
+event payload. See [docs/architecture/pause-lifecycle.md](../docs/architecture/pause-lifecycle.md#keeper-and-indexer-guidance) for the full event-driven
+tracking guide.
+
 ### Prerequisites
 
 - `CONTRACT_ID`
