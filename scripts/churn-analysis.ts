@@ -460,13 +460,13 @@ async function main() {
       hasSqlite = true;
       const rows = db
         .prepare(
-          `SELECT event_name, data, timestamp FROM events
+          `SELECT event_name, raw_data, timestamp FROM events
            WHERE event_name IN ('subscribed', 'cancelled', 'cancelled_with_refund')
            ORDER BY timestamp ASC`,
         )
         .all() as Array<{
         event_name: string;
-        data: string;
+        raw_data: string;
         timestamp: number;
       }>;
 

@@ -1,6 +1,7 @@
 import { existsSync, readFileSync, writeFileSync, mkdirSync, copyFileSync } from "node:fs";
-import { join } from "node:path";
-import { Keypair } from "@stellar/stellar-sdk";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+import { Keypair, Networks } from "@stellar/stellar-sdk";
 import { Server } from "@stellar/stellar-sdk/rpc";
 import { logger } from "./logger";
 import { projectPath, readJsonFile } from "./soroban-admin.js";
@@ -20,53 +21,6 @@ const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
 // const RPC_URL = process.env.RPC_URL || process.env.VITE_RPC_URL || "https://soroban-testnet.stellar.org";
 // const FRIENDBOT_URL = process.env.FRIENDBOT_URL || "https://friendbot.stellar.org";
 
-interface SetupArgs {
-  seed: number;
-  users: number;
-  merchants: number;
-}
-
-function parseArgs(argv: string[]): SetupArgs {
-  let seed = 1;
-  let users = 3;
-  let merchants = 1;
-
-  for (let i = 2; i < argv.length; i++) {
-    switch (argv[i]) {
-      case "--seed":
-        seed = parseInt(argv[++i], 10);
-        break;
-      case "--users":
-        users = parseInt(argv[++i], 10);
-        break;
-      case "--merchants":
-        merchants = parseInt(argv[++i], 10);
-        break;
-      default:
-        console.error(`Unknown argument: ${argv[i]}`);
-        console.error(
-          "Usage: testnet-setup.ts --seed <n> --users <n> --merchants <n>",
-        );
-        process.exit(1);
-    }
-  }
-
-  if (
-    !Number.isInteger(seed) ||
-    !Number.isInteger(users) ||
-    !Number.isInteger(merchants)
-  ) {
-    console.error("ERROR: --seed, --users, and --merchants must be integers.");
-    process.exit(1);
-  }
-
-  if (users < 1 || merchants < 1) {
-    console.error("ERROR: --users and --merchants must each be at least 1.");
-    process.exit(1);
-  }
-
-  return { seed, users, merchants };
-}
 
 // ── Deterministic identity derivation ────────────────────────────────────────
 

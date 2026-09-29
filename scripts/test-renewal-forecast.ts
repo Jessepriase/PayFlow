@@ -397,7 +397,7 @@ function testFixtureRunsEndToEnd(): void {
   assert(negativeAmount !== undefined, "negative amount subscriber found");
   assertEqual(negativeAmount!.next_renewal, null, "negative amount → null forecast");
   assert(
-    negativeAmount!.reason?.startsWith("validation_error"),
+    negativeAmount!.reason?.startsWith("validation_error") === true,
     `negative amount → validation_error (got reason: ${negativeAmount!.reason})`,
   );
 }

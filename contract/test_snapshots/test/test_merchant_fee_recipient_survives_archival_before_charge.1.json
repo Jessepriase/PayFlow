@@ -186,6 +186,11 @@
   "ledger": {
     "protocol_version": 21,
     "sequence_number": 50000,
+    ]
+  ],
+  "ledger": {
+    "protocol_version": 21,
+    "sequence_number": 3153601,
     "timestamp": 86401,
     "network_id": "0000000000000000000000000000000000000000000000000000000000000000",
     "base_reserve": 0,
@@ -973,6 +978,7 @@
                       },
                       "val": {
                         "u64": 86401
+                        "u64": 0
                       }
                     },
                     {
@@ -1098,6 +1104,7 @@
                           "vec": [
                             {
                               "symbol": "GlobalVolumeWindow"
+                              "symbol": "WhitelistEnabled"
                             }
                           ]
                         },
@@ -1162,6 +1169,7 @@
                         },
                         "val": {
                           "bool": false
+                          "bool": false
                         }
                       }
                     ]
@@ -1172,6 +1180,7 @@
             "ext": "v0"
           },
           6357200
+          6307200
         ]
       ],
       [
@@ -1418,6 +1427,7 @@
                         "i128": {
                           "hi": 0,
                           "lo": 99999999000
+                          "lo": 100000000000
                         }
                       }
                     },
@@ -1629,6 +1639,7 @@
                         "i128": {
                           "hi": 0,
                           "lo": 50
+                          "lo": 100000000000
                         }
                       }
                     },
@@ -1655,6 +1666,7 @@
             "ext": "v0"
           },
           568400
+          518400
         ]
       ],
       [
@@ -1767,6 +1779,7 @@
             "ext": "v0"
           },
           170960
+          120960
         ]
       ],
       [
@@ -1788,6 +1801,7 @@
             "ext": "v0"
           },
           6357200
+          6307200
         ]
       ]
     ]
@@ -2592,6 +2606,23 @@
             ],
             "data": {
               "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAOLZM"
+                "symbol": "error"
+              },
+              {
+                "error": {
+                  "storage": "internal_error"
+                }
+              }
+            ],
+            "data": {
+              "vec": [
+                {
+                  "string": "[testing-only] Accessed contract instance key that has been archived. Important: this error may only appear in tests; in the real network contracts aren't called at all if any archived entry is accessed."
+                },
+                {
+                  "address": "CBEPDNVYXQGWB5YUBXKJWYJA7OXTZW5LFLNO5JRRGE6Z6C5OSUZPCCEL"
+                }
+              ]
             }
           }
         }
@@ -2602,6 +2633,7 @@
       "event": {
         "ext": "v0",
         "contract_id": "48f1b6b8bc0d60f7140dd49b6120fbaf3cdbab2adaeea631313d9f0bae9532f1",
+        "contract_id": null,
         "type_": "diagnostic",
         "body": {
           "v0": {
@@ -2618,6 +2650,30 @@
                 "hi": 0,
                 "lo": 0
               }
+                "symbol": "error"
+              },
+              {
+                "error": {
+                  "storage": "internal_error"
+                }
+              }
+            ],
+            "data": {
+              "vec": [
+                {
+                  "string": "contract call failed"
+                },
+                {
+                  "symbol": "balance"
+                },
+                {
+                  "vec": [
+                    {
+                      "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAARQG5"
+                    }
+                  ]
+                }
+              ]
             }
           }
         }
@@ -3099,6 +3155,16 @@
                 "hi": 0,
                 "lo": 0
               }
+                "symbol": "error"
+              },
+              {
+                "error": {
+                  "storage": "internal_error"
+                }
+              }
+            ],
+            "data": {
+              "string": "escalating error to panic"
             }
           }
         }
