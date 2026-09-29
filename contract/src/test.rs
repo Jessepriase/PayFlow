@@ -11197,12 +11197,16 @@ fn test_merchant_fee_recipient_survives_archival_before_charge() {
     let interval: u64 = 86400;
     client.subscribe(&user, &merchant, &1000, &interval, &token_addr, &None, &None);
 
-    // Advance ledger sequence past what would be the minimum TTL if no
-    // extension had been applied (simulate near-expiry without archival).
-    // SUBSCRIPTION_TTL_LEDGERS / 2 + 1 is the threshold: the entry would
-    // have archived if written with the default minimum TTL.
+    // Advance the ledger well past the live-until the host assigns to a fresh
+    // persistent entry (min_persistent_entry_ttl = 4096 ledgers): without the
+    // TTL bump in set_merchant_fee_recipient the entry would be archived here.
+    // 50,000 keeps the scenario meaningful while staying under the window the
+    // token builtin gives its own instance (~120,960 per call) — a larger jump
+    // would archive the token contract instance and make the allowance/balance
+    // calls below panic, a limitation of the test host rather than of the
+    // fee-recipient logic under test.
     env.ledger().with_mut(|l| {
-        l.sequence_number += SUBSCRIPTION_TTL_LEDGERS / 2 + 1;
+        l.sequence_number += 50_000;
         l.timestamp += interval + 1;
     });
 
@@ -11243,20 +11247,23 @@ fn test_merchant_fee_recipient_ttl_refreshed_on_charge() {
     let interval: u64 = 86400;
     client.subscribe(&user, &merchant, &1000, &interval, &token_addr, &None, &None);
 
-    // First charge: advances past half-TTL threshold so the read-time extend
-    // is meaningful (it resets the TTL clock from this point forward).
+    // First charge: advances past the default persistent-entry TTL (4096
+    // ledgers) so the read-time extend in get_merchant_fee_recipient is what
+    // keeps the entry alive. See the archival-before-charge test above for why
+    // the gap is 50,000 rather than SUBSCRIPTION_TTL_LEDGERS / 2.
     env.ledger().with_mut(|l| {
-        l.sequence_number += SUBSCRIPTION_TTL_LEDGERS / 2 + 1;
+        l.sequence_number += 50_000;
         l.timestamp += interval + 1;
     });
 
     client.charge(&user); // read-time TTL bump happens here
 
-    // Second charge: another large ledger gap after the first charge's bump.
-    // If get_merchant_fee_recipient hadn't re-extended, the entry would now
-    // be past the original TTL and the key would have been archived.
+    // Second charge: another gap past the default TTL. If the read-time
+    // re-extension from the first charge (or the write-time extension on
+    // set_merchant_fee_recipient) had not kept the entry alive, the key would
+    // already be archived and this entire call would panic.
     env.ledger().with_mut(|l| {
-        l.sequence_number += SUBSCRIPTION_TTL_LEDGERS / 2 + 1;
+        l.sequence_number += 50_000;
         l.timestamp += interval + 1;
     });
 
@@ -12790,6 +12797,95 @@ fn test_set_global_volume_cap_no_admin_panics() {
 
     let result = client.try_set_global_volume_cap(&100_0000000);
     assert!(result.is_err());
+}
+
+/// Lowering the cap via set_global_volume_cap rejects over-cap volume.
+#[test]
+fn test_global_volume_cap_override_lower_enforced() {
+    let (env, contract_id, token_addr, _user_setup, merchant) = setup();
+    let client = FlowPayClient::new(&env, &contract_id);
+    install_admin(&env, &contract_id);
+
+    // Set a lower cap: 10 trillion stroops
+    let lower_cap: i128 = 10_000_000_000_000;
+    client.set_global_volume_cap(&lower_cap);
+    assert_eq!(client.get_global_volume_cap(), lower_cap);
+
+    // Subscribe a user with amount exceeding the lowered cap
+    let user = setup_large_balance(&env, &contract_id, &token_addr);
+    let amount: i128 = 15_000_000_000_000; // 15 trillion > 10 trillion cap
+    let interval: u64 = 86400;
+
+    client.subscribe(
+        &user,
+        &merchant,
+        &amount,
+        &interval,
+        &token_addr,
+        &None,
+        &None,
+    );
+
+    env.ledger().with_mut(|l| {
+        l.timestamp += interval + 1;
+    });
+
+    // Charge should fail with GlobalVolumeExceeded because amount > cap
+    let result = client.try_charge(&user);
+    assert!(result.is_err());
+}
+
+/// Raising the cap via set_global_volume_cap allows previously rejected amounts.
+#[test]
+fn test_global_volume_cap_override_raise_allows_more() {
+    let (env, contract_id, token_addr, _user_setup, merchant) = setup();
+    let client = FlowPayClient::new(&env, &contract_id);
+    install_admin(&env, &contract_id);
+
+    // Start with default cap (50 trillion), set a higher cap: 100 trillion
+    let higher_cap: i128 = 100_000_000_000_000;
+    client.set_global_volume_cap(&higher_cap);
+    assert_eq!(client.get_global_volume_cap(), higher_cap);
+
+    // Subscribe a user with amount that would exceed default but not raised cap
+    let user = setup_large_balance(&env, &contract_id, &token_addr);
+    let amount: i128 = 75_000_000_000_000; // 75 trillion > 50T default, < 100T raised
+    let interval: u64 = 86400;
+
+    client.subscribe(
+        &user,
+        &merchant,
+        &amount,
+        &interval,
+        &token_addr,
+        &None,
+        &None,
+    );
+
+    env.ledger().with_mut(|l| {
+        l.timestamp += interval + 1;
+    });
+
+    // Charge should succeed because raised cap allows it
+    client.charge(&user);
+}
+
+/// get_contract_config reports the effective cap (override when set, else default).
+#[test]
+fn test_get_contract_config_reports_effective_cap() {
+    let (env, contract_id, _token_addr, _user, _merchant) = setup();
+    let client = FlowPayClient::new(&env, &contract_id);
+    install_admin(&env, &contract_id);
+
+    // Default cap
+    let config = client.get_contract_config();
+    assert_eq!(config.global_volume_cap, GLOBAL_MAX_VOLUME_PER_HOUR);
+
+    // After override
+    let new_cap: i128 = 25_000_000_000_000;
+    client.set_global_volume_cap(&new_cap);
+    let config = client.get_contract_config();
+    assert_eq!(config.global_volume_cap, new_cap);
 }
 
 // ─────────────────────────────────────────────────────────────────────

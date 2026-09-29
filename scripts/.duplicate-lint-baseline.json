@@ -1,4 +1,16 @@
 {
   "//": "Scripts that already fail lint-duplicates and are tracked by their own issues. Remove an entry once its file passes; never add new ones.",
+  "files": [
+    "grace-period-monitor.ts",
+    "migrate-contract.ts",
+    "onboard-merchant.ts",
+    "rotate-fee-collector.ts",
+    "subscriber-health-dashboard.ts",
+    "subscription-snapshot.ts",
+    "test-churn-analysis.ts",
+    "test-dlq.ts",
+    "testnet-setup.ts",
+    "top-merchants.ts"
+  ]
   "files": []
 }

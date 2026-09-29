@@ -47,6 +47,10 @@ export function getDeprecationWarnings(): string[] {
   return DEPRECATION_WARNINGS;
 }
 
+export function clearDeprecationWarnings(): void {
+  DEPRECATION_WARNINGS.length = 0;
+}
+
 export function logDeprecationWarnings(): void {
   if (DEPRECATION_WARNINGS.length > 0) {
     console.warn("\n⚠ Deprecated environment variables detected:\n");
@@ -134,6 +138,7 @@ export const ConfigSchema = z.object({
       "SECRET_KEY must be a valid Stellar secret key (starts with 'S', 56-char base32)",
     ),
 
+  /** Maximum number of subscriptions to charge in a single transaction (1–200) */
   /**
    * Maximum number of subscriptions to charge in a single transaction (1–200).
    * The upper bound of 200 mirrors the contract's `MAX_BATCH_SIZE_CEILING` —

@@ -9,11 +9,17 @@
  */
 
 import { describe, it, expect, beforeEach } from "vitest";
-import { normalizeEnv, getDeprecationWarnings } from "./config.js";
+import { readFileSync } from "node:fs";
+import { join, dirname } from "node:path";
+import { fileURLToPath } from "node:url";
+import { normalizeEnv, getDeprecationWarnings, clearDeprecationWarnings, ConfigSchema } from "./config.js";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
 
 describe("config normalization", () => {
   beforeEach(() => {
-    // Clear warnings between tests (mock reset)
+    clearDeprecationWarnings();
   });
 
   describe("SECRET_KEY / KEEPER_SECRET alias", () => {
@@ -88,5 +94,32 @@ describe("config normalization", () => {
       const warnings = getDeprecationWarnings();
       expect(warnings.length).toBe(0);
     });
+  });
+});
+
+describe("docs parity: scripts-environment.md vs ConfigSchema", () => {
+  /** Extract canonical variable names from the ConfigSchema shape. */
+  function getSchemaKeys(): string[] {
+    const shape = ConfigSchema.shape;
+    return Object.keys(shape).filter((k) => !["WEBHOOK_URL", "WEBHOOK_SECRET", "WEBHOOK_DLQ_FILE", "NETWORK_PASSPHRASE"].includes(k));
+  }
+
+  /** Extract variable names from the docs/scripts-environment.md canonical table. */
+  function getDocKeys(): string[] {
+    const docPath = join(__dirname, "..", "docs", "scripts-environment.md");
+    const content = readFileSync(docPath, "utf8");
+    // Match the canonical variables table rows (lines starting with | `VAR_NAME` |)
+    const rows = content.match(/\|\s*`([A-Z_]+)`\s*\|/g) || [];
+    return rows
+      .map((r) => r.match(/`([A-Z_]+)`/)?.[1])
+      .filter((v): v is string => !!v)
+      .filter((v) => !["WEBHOOK_URL", "WEBHOOK_SECRET", "WEBHOOK_DLQ_FILE", "NETWORK_PASSPHRASE", "KEEPER_SECRET", "NETWORK_PASSTHRASE", "CHARGE_INTERVAL_MS", "PAGE_SIZE", "MAX_RETRIES", "KEEPER_PUBLIC_KEY", "DRY_RUN", "KEEPER_USE_LEGACY_PAGING", "LOG_LEVEL", "LOG_FORMAT", "DATA_DIR", "DB_FILE", "POLL_INTERVAL_MS", "START_LEDGER", "METRICS_PORT", "REPORT_DIR", "ALERT_WINDOW_LEDGERS", "SOROBAN_SOURCE_ACCOUNT"].includes(v));
+  }
+
+  it("every canonical schema key is documented in scripts-environment.md", () => {
+    const schemaKeys = getSchemaKeys();
+    const docKeys = getDocKeys();
+    const missing = schemaKeys.filter((k) => !docKeys.includes(k));
+    expect(missing).toEqual([]);
   });
 });

@@ -353,6 +353,10 @@ pub fn publish_max_batch_size_set(env: &Env, old: u32, new: u32) {
         MaxBatchSizeSetEventData { old, new },
     );
 }
+pub fn publish_max_whitelist_batch_size_set(env: &Env, old: u32, new: u32) {
+    env.events()
+        .publish((Symbol::new(env, "max_wl_batch_size_set"),), (old, new));
+}
 
 pub fn publish_merchant_history_cleared(env: &Env, merchant: &Address) {
     env.events()
@@ -604,14 +608,6 @@ pub fn publish_max_whitelist_batch_size_set(env: &Env, old: u32, new: u32) {
 }
 
 
-
-/// Publishes `metadata_set` event — called from `subscription_metadata::set_metadata`.
-pub fn metadata_set(env: &Env, user: &Address, label: &String) {
-    env.events().publish(
-        (Symbol::new(env, "metadata_set"), user.clone()),
-        label.clone(),
-    );
-}
 
 /// Publishes `metadata_cleared` event — called from `subscription_metadata::clear_metadata`.
 pub fn metadata_cleared(env: &Env, user: &Address) {

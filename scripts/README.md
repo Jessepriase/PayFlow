@@ -958,6 +958,31 @@ assume the wrong encoding.
 
 ---
 
+## Module Map: Entrypoints, Shared Libraries, and Harnesses
+
+Every script in this directory falls into one of three categories:
+
+| Category | Purpose | Examples |
+| --- | --- | --- |
+| **Entrypoint** | Runnable CLI tools invoked by operators or CI. Have a `main` function, parse CLI args, and exit with a status code. | `keeper.ts`, `indexer.ts`, `metrics-server.ts`, `deploy-pipeline.ts`, `pre-upgrade-check.ts`, `top-merchants.ts`, `check-allowances.ts`, `alert-expiring-allowances.ts`, `health-check.ts`, `subscription-snapshot.ts`, `daily-revenue-summary.ts`, `export-merchant-report.ts`, `watch-events.ts`, `query-events.ts`, `onboard-merchant.ts`, `rotate-fee-collector.ts`, `migrate-contract.ts`, `replay-dlq.ts`, `replay-events.ts`, `backup-indexer-db.ts`, `grace-period-monitor.ts`, `alert-failed-charges.ts`, `batch-optimizer.ts`, `churn-analysis.ts`, `merchant-analytics.ts`, `subscriber-churn-report.ts`, `subscriber-health-dashboard.ts`, `topup-allowance.ts`, `fee-revenue-report.ts`, `audit-trail.ts`, `snapshot-diff.ts`, `renewal-forecast.ts`, `testnet-setup.ts`, `validate-config.ts`, `soroban-admin.ts` |
+| **Shared Library (`lib/`)** | Reusable helpers imported by entrypoints. No `main`; export pure functions or classes. | `lib/dry-run-stats.ts`, `lib/forecast.ts`, `lib/scval-helpers.ts` |
+| **Internal Harness** | Benchmarking, testing, or development tools not meant for production operations. | `keeper-benchmark.ts`, `watch-events.ts` (also entrypoint), `contrast-check.mjs`, `lint-duplicates.ts`, `lint-duplicates.mjs`, `generate-types.sh` |
+
+### Shared Helper Locations
+
+| Helper | Location | Purpose |
+| --- | --- | --- |
+| ScVal encoding/decoding | `lib/scval-helpers.ts` | Soroban Value (ScVal) serialization helpers for contract interaction |
+| Structured logging | `logger.ts` | JSON/human log formatter with child context binding |
+| Configuration parsing | `config.ts` | Zod schema for env vars, deprecation alias handling (`KEEPER_SECRET`→`SECRET_KEY`, `NETWORK_PASSTHRASE`→`NETWORK_PASSPHRASE`) |
+| RPC client with failover | `rpc-client.ts` | Multi-endpoint RPC client (`RPC_URLS`) |
+| Dry-run statistics | `lib/dry-run-stats.ts` | Aggregation of `ChargeResult` pages for keeper dry-run reports |
+| Forecasting utilities | `lib/forecast.ts` | Renewal forecasting math |
+| Database schema | `db/schema.ts` | SQLite schema for indexer |
+| Node SQLite mock | `__tests__/support/node-sqlite.ts` | Test mock for `node:sqlite` |
+
+---
+
 ## Other scripts
 
 Out of scope for this ops-guide revision. Existing helpers include (non-exhaustive):
