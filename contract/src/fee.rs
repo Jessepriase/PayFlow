@@ -1,5 +1,4 @@
 use soroban_sdk::{token, Address, Env};
-use soroban_sdk::{token, Address, Env};
 
 use crate::validation;
 use crate::{errors::ContractError, DataKey, Subscription, SUBSCRIPTION_TTL_LEDGERS};

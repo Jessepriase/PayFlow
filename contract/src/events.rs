@@ -603,36 +603,6 @@ pub fn publish_max_whitelist_batch_size_set(env: &Env, old: u32, new: u32) {
         .publish((Symbol::new(env, "max_wl_batch_size_set"),), (old, new));
 }
 
-pub fn publish_cancelled(env: &Env, user: &Address) {
-    env.events().publish(
-        (Symbol::new(env, "cancelled"), user.clone()),
-        CancelledEventData {
-            ledger_sequence: env.ledger().sequence(),
-        },
-    );
-}
-
-pub fn publish_cancelled_with_refund(env: &Env, user: &Address, refund_amount: i128) {
-    env.events().publish(
-        (Symbol::new(env, "cancelled_with_refund"), user.clone()),
-        CancelledWithRefundEventData {
-            refund_amount,
-            ledger_sequence: env.ledger().sequence(),
-        },
-    );
-}
-
-pub fn publish_pay_per_use(env: &Env, user: &Address, merchant: &Address, amount: i128) {
-    env.events().publish(
-        (Symbol::new(env, "pay_per_use"), user.clone()),
-        PayPerUseEventData {
-            merchant: merchant.clone(),
-            amount,
-            ledger_sequence: env.ledger().sequence(),
-        },
-    );
-}
-
 
 
 /// Publishes `metadata_set` event — called from `subscription_metadata::set_metadata`.

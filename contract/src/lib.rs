@@ -171,17 +171,6 @@ pub const MAX_SUBSCRIPTION_AMOUNT: i128 = 100_000_000_000_000;
 /// all timestamp arithmetic safely within the representable `u64` range for any
 /// foreseeable ledger timestamp. Mirrors the `MAX_SUBSCRIPTION_AMOUNT` precedent.
 pub const MAX_SUBSCRIPTION_INTERVAL: u64 = 12_623_040_000; // 400 years in seconds
-/// Maximum permitted subscription billing interval (seconds).
-///
-/// Rationale: Soroban timestamps are `u64` Unix seconds. Adding a near-`u64::MAX`
-/// interval to `last_charged` overflows, which aborts the charge call and, inside
-/// `batch_charge`, can abort or force-skip the whole batch — a self-inflicted DoS.
-///
-/// 400 years in seconds (≈ 12_623_040_000) is far beyond any commercially
-/// meaningful billing cycle and keeps `last_charged + interval` safely within the
-/// representable `u64` range for any realistic ledger timestamp.
-/// Mirror of `MAX_SUBSCRIPTION_AMOUNT` precedent (see above).
-pub const MAX_SUBSCRIPTION_INTERVAL: u64 = 12_623_040_000; // 400 years in seconds
 
 // ─────────────────────────────────────────────────────────────
 // Data types
@@ -359,7 +348,7 @@ impl FlowPay {
 
     pub fn set_max_batch_size(env: Env, size: u32) {
         admin::require_admin(&env);
-        if size > MAX_BATCH_SIZE_CEILING {
+        if size == 0 || size > MAX_BATCH_SIZE_CEILING {
             env.panic_with_error(ContractError::InvalidBatchSize);
         }
         let old = batch::get_max_batch_size(&env);
@@ -407,7 +396,8 @@ impl FlowPay {
     }
 
     pub fn get_batch_charge_estimate(env: Env, users: Vec<Address>) -> Vec<ChargeResult> {
-        if users.len() > 200 {
+        let max_size = batch::get_max_batch_size(&env);
+        if users.len() > max_size {
             env.panic_with_error(ContractError::BatchTooLarge);
         }
         let mut results: Vec<ChargeResult> = Vec::new(&env);
@@ -1416,7 +1406,9 @@ impl FlowPay {
 
     /// Prunes missing or expired daily revenue buckets safely. Admin only.
     pub fn prune_merchant_revenue_days(env: Env, merchant: Address, days: Vec<u64>) {
+        let removed = days.len();
         merchant_stats::prune_merchant_revenue_days(&env, &merchant, days);
+        events::publish_merchant_revenue_pruned(&env, &merchant, removed);
     }
 
     /// Retrieves a specific daily revenue bucket. Returns 0 if missing.
@@ -1793,6 +1785,7 @@ impl FlowPay {
     pub fn reset_merchant_revenue(env: Env, merchant: Address) {
         admin::require_admin(&env);
         merchant_stats::reset_merchant_revenue(&env, &merchant);
+        events::publish_merchant_revenue_reset(&env, &merchant);
     }
 
     // ─────────────────────────────────────────────────────────────
@@ -2390,14 +2383,7 @@ fn subscribe_inner(
     }
 
     // Prevent new subscriptions when contract is paused
-    let paused = env
-        .storage()
-        .instance()
-        .get::<_, bool>(&DataKey::ContractPaused)
-        .unwrap_or(false);
-    if paused {
-        env.panic_with_error(ContractError::ContractPausedError);
-    }
+    ensure_contract_not_paused(&env);
 
     validation::require_valid_amount(env, amount);
     validation::validate_interval(env, interval);
