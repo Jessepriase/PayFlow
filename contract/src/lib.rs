@@ -171,17 +171,6 @@ pub const MAX_SUBSCRIPTION_AMOUNT: i128 = 100_000_000_000_000;
 /// all timestamp arithmetic safely within the representable `u64` range for any
 /// foreseeable ledger timestamp. Mirrors the `MAX_SUBSCRIPTION_AMOUNT` precedent.
 pub const MAX_SUBSCRIPTION_INTERVAL: u64 = 12_623_040_000; // 400 years in seconds
-/// Maximum permitted subscription billing interval (seconds).
-///
-/// Rationale: Soroban timestamps are `u64` Unix seconds. Adding a near-`u64::MAX`
-/// interval to `last_charged` overflows, which aborts the charge call and, inside
-/// `batch_charge`, can abort or force-skip the whole batch — a self-inflicted DoS.
-///
-/// 400 years in seconds (≈ 12_623_040_000) is far beyond any commercially
-/// meaningful billing cycle and keeps `last_charged + interval` safely within the
-/// representable `u64` range for any realistic ledger timestamp.
-/// Mirror of `MAX_SUBSCRIPTION_AMOUNT` precedent (see above).
-pub const MAX_SUBSCRIPTION_INTERVAL: u64 = 12_623_040_000; // 400 years in seconds
 
 // ─────────────────────────────────────────────────────────────
 // Data types
