@@ -4,13 +4,14 @@ import { parseAddressList, chunkAddresses } from "../../utils/addressValidation"
 import { friendlyError } from "../../utils/errors";
 import { useTransaction } from "../../hooks/useTransaction";
 import { useToast } from "../../hooks/useToast";
+import { CONTRACT_LIMITS } from "../../constants";
 import AddressListInput from "./AddressListInput";
 import ConfirmModal from "../ConfirmModal";
 import Spinner from "../Spinner";
 import ToastContainer from "../Toast";
 
-/** Contract hard limit per whitelist_batch_add / whitelist_batch_remove call */
-const MAX_WHITELIST_BATCH = 50;
+/** Contract hard limit — sourced from shared constants */
+const MAX_WHITELIST_BATCH = CONTRACT_LIMITS.MAX_BATCH_WHITELIST;
 
 type WhitelistAction = "add" | "remove";
 
@@ -27,7 +28,7 @@ interface Props {
  * BatchWhitelistPanel — lets an admin add or remove multiple merchant addresses
  * from the whitelist in a single operation.
  *
- * Lists longer than 50 addresses are split into multiple transactions.
+ * Lists longer than MAX_BATCH_WHITELIST are blocked at submit with a warning.
  */
 export default function BatchWhitelistPanel({ adminKey, onSign, isAdmin }: Props) {
   const { toasts, addToast, removeToast, pauseToast, resumeToast } = useToast();
@@ -38,7 +39,13 @@ export default function BatchWhitelistPanel({ adminKey, onSign, isAdmin }: Props
   const [showConfirm, setShowConfirm] = useState(false);
 
   const { valid, invalid } = parseAddressList(rawInput);
-  const canSubmit = isAdmin && valid.length > 0 && invalid.length === 0 && tx.status !== "pending";
+  const overCap = valid.length > MAX_WHITELIST_BATCH;
+  const canSubmit =
+    isAdmin &&
+    valid.length > 0 &&
+    invalid.length === 0 &&
+    !overCap &&
+    tx.status !== "pending";
 
   const chunks = chunkAddresses(valid, MAX_WHITELIST_BATCH);
   const txCount = chunks.length;
@@ -93,8 +100,8 @@ export default function BatchWhitelistPanel({ adminKey, onSign, isAdmin }: Props
           Batch Whitelist Management
         </h4>
         <p className="text-sm text-muted">
-          Add or remove multiple merchant addresses from the whitelist. Lists longer than{" "}
-          {MAX_WHITELIST_BATCH} addresses are split automatically.
+          Add or remove multiple merchant addresses from the whitelist. Max{" "}
+          {MAX_WHITELIST_BATCH} addresses per batch.
         </p>
       </header>
 
@@ -162,6 +169,21 @@ export default function BatchWhitelistPanel({ adminKey, onSign, isAdmin }: Props
             </span>
           )}
           .
+        </div>
+      )}
+
+      {overCap && (
+        <div
+          role="alert"
+          className="mb-3 p-3 rounded-md text-sm"
+          style={{
+            background: "rgba(239, 68, 68, 0.1)",
+            color: "var(--color-error, #ef4444)",
+            border: "1px solid var(--color-error, #ef4444)",
+          }}
+        >
+          Too many addresses: {valid.length} provided, max {MAX_WHITELIST_BATCH} per batch. Remove{" "}
+          {valid.length - MAX_WHITELIST_BATCH} to continue.
         </div>
       )}
 

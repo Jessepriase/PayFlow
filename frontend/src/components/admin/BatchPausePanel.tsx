@@ -4,13 +4,14 @@ import { parseAddressList, chunkAddresses } from "../../utils/addressValidation"
 import { friendlyError } from "../../utils/errors";
 import { useTransaction } from "../../hooks/useTransaction";
 import { useToast } from "../../hooks/useToast";
+import { CONTRACT_LIMITS } from "../../constants";
 import AddressListInput from "./AddressListInput";
 import ConfirmModal from "../ConfirmModal";
 import Spinner from "../Spinner";
 import ToastContainer from "../Toast";
 
-/** Contract hard limit per batch_pause_subscriptions call */
-const MAX_PAUSE_BATCH = 25;
+/** Contract hard limit — sourced from shared constants */
+const MAX_PAUSE_BATCH = CONTRACT_LIMITS.MAX_BATCH_PAUSE;
 
 interface Props {
   /** The admin's wallet public key */
@@ -25,8 +26,8 @@ interface Props {
  * BatchPausePanel — lets an admin paste a list of subscriber addresses and
  * pause all their subscriptions in one or more transactions.
  *
- * If more than 25 addresses are provided the list is automatically split into
- * multiple transactions (the contract limit is MAX_BATCH_PAUSE_SUBSCRIPTIONS = 25).
+ * Lists longer than MAX_BATCH_PAUSE are blocked at submit with a warning,
+ * because the contract caps each batch_pause_subscriptions call.
  */
 export default function BatchPausePanel({ adminKey, onSign, isAdmin }: Props) {
   const { toasts, addToast, removeToast, pauseToast, resumeToast } = useToast();
@@ -36,7 +37,13 @@ export default function BatchPausePanel({ adminKey, onSign, isAdmin }: Props) {
   const [showConfirm, setShowConfirm] = useState(false);
 
   const { valid, invalid } = parseAddressList(rawInput);
-  const canSubmit = isAdmin && valid.length > 0 && invalid.length === 0 && tx.status !== "pending";
+  const overCap = valid.length > MAX_PAUSE_BATCH;
+  const canSubmit =
+    isAdmin &&
+    valid.length > 0 &&
+    invalid.length === 0 &&
+    !overCap &&
+    tx.status !== "pending";
 
   const chunks = chunkAddresses(valid, MAX_PAUSE_BATCH);
   const txCount = chunks.length;
@@ -87,9 +94,8 @@ export default function BatchPausePanel({ adminKey, onSign, isAdmin }: Props) {
           Batch Pause Subscriptions
         </h4>
         <p className="text-sm text-muted">
-          Paste subscriber addresses (one per line) to pause multiple subscriptions at once. Lists
-          longer than {MAX_PAUSE_BATCH} addresses are split into multiple transactions
-          automatically.
+          Paste subscriber addresses (one per line) to pause multiple subscriptions at once. Max{" "}
+          {MAX_PAUSE_BATCH} addresses per batch.
         </p>
       </header>
 
@@ -126,6 +132,21 @@ export default function BatchPausePanel({ adminKey, onSign, isAdmin }: Props) {
             </span>
           )}
           .
+        </div>
+      )}
+
+      {overCap && (
+        <div
+          role="alert"
+          className="mb-3 p-3 rounded-md text-sm"
+          style={{
+            background: "rgba(239, 68, 68, 0.1)",
+            color: "var(--color-error, #ef4444)",
+            border: "1px solid var(--color-error, #ef4444)",
+          }}
+        >
+          Too many addresses: {valid.length} provided, max {MAX_PAUSE_BATCH} per batch. Remove{" "}
+          {valid.length - MAX_PAUSE_BATCH} to continue.
         </div>
       )}
 
