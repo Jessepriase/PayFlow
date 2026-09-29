@@ -9641,6 +9641,42 @@ fn test_simulate_charge_variants() {
     );
 }
 
+/// A broken `ProceedToAllowance` invariant — the precheck outcome says
+/// "proceed" but no subscription is present — must surface a typed
+/// `ChargeResult::NoSubscription` instead of aborting the call via
+/// `expect`. The happy path (subscription present, allowance sufficient)
+/// must still resolve to `Charged`.
+#[test]
+fn test_charge_result_from_precheck_invariant_violation_is_typed() {
+    let (env, contract_id, token_addr, user, merchant) = setup();
+    let client = FlowPayClient::new(&env, &contract_id);
+
+    // Happy path: a due, allowed subscription resolves to Charged.
+    client.subscribe(&user, &merchant, &1_0000000, &86400, &token_addr, &None, &None);
+    env.ledger().with_mut(|l| l.timestamp += 86401);
+    let sub: Subscription = env.as_contract(&contract_id, || {
+        env.storage()
+            .persistent()
+            .get(&DataKey::Subscription(user.clone()))
+            .unwrap()
+    });
+    // has_sufficient_allowance reads the current contract address, so the
+    // helper must run inside a contract context.
+    env.as_contract(&contract_id, || {
+        assert_eq!(
+            crate::charge_exec::charge_result_from_precheck(&env, &user, Some(sub)),
+            crate::ChargeResult::Charged
+        );
+
+        // Invariant violation: ProceedToAllowance with no subscription present.
+        // Must yield a typed outcome, not an abort.
+        assert_eq!(
+            crate::charge_exec::charge_result_from_precheck(&env, &user, None),
+            crate::ChargeResult::NoSubscription
+        );
+    });
+}
+
 #[test]
 fn test_get_schema_version_returns_zero_and_updates() {
     let (env, contract_id, _token_addr, user, _merchant) = setup();
