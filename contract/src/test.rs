@@ -11012,12 +11012,16 @@ fn test_merchant_fee_recipient_survives_archival_before_charge() {
     let interval: u64 = 86400;
     client.subscribe(&user, &merchant, &1000, &interval, &token_addr, &None, &None);
 
-    // Advance ledger sequence past what would be the minimum TTL if no
-    // extension had been applied (simulate near-expiry without archival).
-    // SUBSCRIPTION_TTL_LEDGERS / 2 + 1 is the threshold: the entry would
-    // have archived if written with the default minimum TTL.
+    // Advance the ledger well past the live-until the host assigns to a fresh
+    // persistent entry (min_persistent_entry_ttl = 4096 ledgers): without the
+    // TTL bump in set_merchant_fee_recipient the entry would be archived here.
+    // 50,000 keeps the scenario meaningful while staying under the window the
+    // token builtin gives its own instance (~120,960 per call) — a larger jump
+    // would archive the token contract instance and make the allowance/balance
+    // calls below panic, a limitation of the test host rather than of the
+    // fee-recipient logic under test.
     env.ledger().with_mut(|l| {
-        l.sequence_number += SUBSCRIPTION_TTL_LEDGERS / 2 + 1;
+        l.sequence_number += 50_000;
         l.timestamp += interval + 1;
     });
 
@@ -11058,20 +11062,23 @@ fn test_merchant_fee_recipient_ttl_refreshed_on_charge() {
     let interval: u64 = 86400;
     client.subscribe(&user, &merchant, &1000, &interval, &token_addr, &None, &None);
 
-    // First charge: advances past half-TTL threshold so the read-time extend
-    // is meaningful (it resets the TTL clock from this point forward).
+    // First charge: advances past the default persistent-entry TTL (4096
+    // ledgers) so the read-time extend in get_merchant_fee_recipient is what
+    // keeps the entry alive. See the archival-before-charge test above for why
+    // the gap is 50,000 rather than SUBSCRIPTION_TTL_LEDGERS / 2.
     env.ledger().with_mut(|l| {
-        l.sequence_number += SUBSCRIPTION_TTL_LEDGERS / 2 + 1;
+        l.sequence_number += 50_000;
         l.timestamp += interval + 1;
     });
 
     client.charge(&user); // read-time TTL bump happens here
 
-    // Second charge: another large ledger gap after the first charge's bump.
-    // If get_merchant_fee_recipient hadn't re-extended, the entry would now
-    // be past the original TTL and the key would have been archived.
+    // Second charge: another gap past the default TTL. If the read-time
+    // re-extension from the first charge (or the write-time extension on
+    // set_merchant_fee_recipient) had not kept the entry alive, the key would
+    // already be archived and this entire call would panic.
     env.ledger().with_mut(|l| {
-        l.sequence_number += SUBSCRIPTION_TTL_LEDGERS / 2 + 1;
+        l.sequence_number += 50_000;
         l.timestamp += interval + 1;
     });
 

@@ -353,20 +353,10 @@ pub fn publish_max_batch_size_set(env: &Env, old: u32, new: u32) {
         MaxBatchSizeSetEventData { old, new },
     );
 }
-#[soroban_sdk::contracttype]
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct MaxWhitelistBatchSizeSetEventData {
-    pub old: u32,
-    pub new: u32,
-}
-
 pub fn publish_max_whitelist_batch_size_set(env: &Env, old: u32, new: u32) {
-    env.events().publish(
-        (Symbol::new(env, "max_wl_batch_size_set"),),
-        MaxWhitelistBatchSizeSetEventData { old, new },
-    );
+    env.events()
+        .publish((Symbol::new(env, "max_wl_batch_size_set"),), (old, new));
 }
-
 
 pub fn publish_merchant_history_cleared(env: &Env, merchant: &Address) {
     env.events()

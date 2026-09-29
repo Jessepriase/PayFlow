@@ -170,7 +170,8 @@ pub const MAX_SUBSCRIPTION_AMOUNT: i128 = 100_000_000_000_000;
 /// 400 years (≈ 12 623 040 000 s) is far beyond any real billing cycle and keeps
 /// all timestamp arithmetic safely within the representable `u64` range for any
 /// foreseeable ledger timestamp. Mirrors the `MAX_SUBSCRIPTION_AMOUNT` precedent.
-pub const MAX_SUBSCRIPTION_INTERVAL: u64 = 12_623_040_000; // 400 years in seconds// ─────────────────────────────────────────────────────────────
+pub const MAX_SUBSCRIPTION_INTERVAL: u64 = 12_623_040_000; // 400 years in seconds
+// ─────────────────────────────────────────────────────────────
 // Data types
 // ─────────────────────────────────────────────────────────────
 

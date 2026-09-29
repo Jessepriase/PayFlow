@@ -77,8 +77,6 @@ pub fn set_admin(env: &Env, admin: &Address) {
     env.storage().instance().set(&DataKey::Admin, admin);
 }
 
-/// Overwrites the stored default SAC token address.
-
 pub fn is_contract_paused(env: &Env) -> bool {
     env.storage()
         .instance()
