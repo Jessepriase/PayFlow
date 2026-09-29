@@ -2,6 +2,7 @@ import React, { useRef, useState, useCallback } from "react";
 import { StrKey } from "@stellar/stellar-sdk";
 import { useLocalStorage } from "../hooks/useLocalStorage";
 import { useFocusTrap } from "../hooks/useFocusTrap";
+import { MAX_ADDRESS_BOOK_ENTRIES } from "../constants";
 import ConfirmModal from "./ConfirmModal";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -52,6 +53,8 @@ export default function AddressBook({ onSelect, onClose }: Props) {
       e.address.toLowerCase().includes(query.toLowerCase())
   );
 
+  const atCap = entries.length >= MAX_ADDRESS_BOOK_ENTRIES;
+
   // ── Handlers ─────────────────────────────────────────────────────────────
 
   const handleAdd = useCallback(() => {
@@ -71,8 +74,21 @@ export default function AddressBook({ onSelect, onClose }: Props) {
       setAddError("Invalid Stellar address.");
       return;
     }
+    if (entries.length >= MAX_ADDRESS_BOOK_ENTRIES) {
+      setAddError(
+        `Address book is full (${MAX_ADDRESS_BOOK_ENTRIES} entries max). Delete an entry before adding a new one.`
+      );
+      return;
+    }
 
-    setEntries([...entries, { name: trimmedName, address: trimmedAddress }]);
+    const ok = setEntries([
+      ...entries,
+      { name: trimmedName, address: trimmedAddress },
+    ]);
+    if (!ok) {
+      setAddError("Could not save entry — browser storage is full.");
+      return;
+    }
     setNewName("");
     setNewAddress("");
   }, [newName, newAddress, entries, setEntries]);
@@ -163,10 +179,20 @@ export default function AddressBook({ onSelect, onClose }: Props) {
           return;
         }
 
-        // Merge: append imported entries (allow duplicates per spec)
-        // Use entries ref-captured at callback creation time — safe because
-        // handleFileChange is recreated whenever entries changes.
-        setEntries([...entries, ...valid]);
+        // Reject atomically if the import would exceed the cap — no partial
+        // imports, so the persisted store never contains a truncated subset.
+        if (entries.length + valid.length > MAX_ADDRESS_BOOK_ENTRIES) {
+          setImportError(
+            `Import rejected: ${valid.length} entries would exceed the ${MAX_ADDRESS_BOOK_ENTRIES} entry cap (currently ${entries.length}). No entries were imported.`
+          );
+          return;
+        }
+
+        const ok = setEntries([...entries, ...valid]);
+        if (!ok) {
+          setImportError("Import failed — browser storage is full.");
+          return;
+        }
 
         if (skipped.length > 0) {
           setImportError(
@@ -207,6 +233,11 @@ export default function AddressBook({ onSelect, onClose }: Props) {
           <div className="address-book__header flex-between">
             <h3 id="address-book-title" className="address-book__title">
               Address Book
+              {entries.length > 0 && (
+                <span className="text-sm text-muted" style={{ marginLeft: "0.5rem" }}>
+                  ({entries.length}/{MAX_ADDRESS_BOOK_ENTRIES})
+                </span>
+              )}
             </h3>
             <button
               className="btn-icon address-book__close"
@@ -321,6 +352,11 @@ export default function AddressBook({ onSelect, onClose }: Props) {
             {addError && (
               <p className="text-error address-book__add-error" role="alert">
                 {addError}
+              </p>
+            )}
+            {atCap && !addError && (
+              <p className="text-muted text-sm" role="status">
+                Address book is at its {MAX_ADDRESS_BOOK_ENTRIES}-entry cap.
               </p>
             )}
           </fieldset>

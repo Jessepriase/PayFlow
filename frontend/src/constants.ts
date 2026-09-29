@@ -19,3 +19,6 @@ export const CONTRACT_LIMITS = {
   /** Max addresses per whitelist_batch_add / whitelist_batch_remove call */
   MAX_BATCH_WHITELIST: 50,
 } as const;
+
+/** Hard cap on the number of entries persisted to the address book. */
+export const MAX_ADDRESS_BOOK_ENTRIES = 250;
