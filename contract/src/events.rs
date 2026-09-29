@@ -603,6 +603,8 @@ pub fn publish_max_whitelist_batch_size_set(env: &Env, old: u32, new: u32) {
         .publish((Symbol::new(env, "max_wl_batch_size_set"),), (old, new));
 }
 
+
+
 /// Publishes `metadata_set` event — called from `subscription_metadata::set_metadata`.
 pub fn metadata_set(env: &Env, user: &Address, label: &String) {
     env.events().publish(
