@@ -1,7 +1,11 @@
 import React, { useRef, useState, useCallback } from "react";
-import { StrKey } from "@stellar/stellar-sdk";
 import { useLocalStorage } from "../hooks/useLocalStorage";
 import { useFocusTrap } from "../hooks/useFocusTrap";
+import {
+  STORAGE_KEY,
+  validateAddressBookEntry,
+  isValidEd25519Address,
+} from "../utils/addressValidation";
 import { MAX_ADDRESS_BOOK_ENTRIES } from "../constants";
 import ConfirmModal from "./ConfirmModal";
 
@@ -18,8 +22,6 @@ interface Props {
   /** Called when the user closes the modal without selecting. */
   onClose: () => void;
 }
-
-const STORAGE_KEY = "flowpay_address_book";
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
@@ -59,17 +61,12 @@ export default function AddressBook({ onSelect, onClose }: Props) {
 
   const handleAdd = useCallback(() => {
     setAddError(null);
-    const trimmedName = newName.trim();
-    const trimmedAddress = newAddress.trim();
-
-    if (!trimmedName) {
-      setAddError("Name is required.");
+    const result = validateAddressBookEntry(newName, newAddress);
+    if (!result.valid) {
+      setAddError(result.error);
       return;
     }
-    if (!trimmedAddress) {
-      setAddError("Address is required.");
-      return;
-    }
+    setEntries([...entries, { name: newName.trim(), address: newAddress.trim() }]);
     if (!StrKey.isValidEd25519PublicKey(trimmedAddress)) {
       setAddError("Invalid Stellar address.");
       return;
@@ -163,7 +160,7 @@ export default function AddressBook({ onSelect, onClose }: Props) {
             "address" in item &&
             typeof (item as Record<string, unknown>).name === "string" &&
             typeof (item as Record<string, unknown>).address === "string" &&
-            StrKey.isValidEd25519PublicKey((item as AddressEntry).address)
+            isValidEd25519Address((item as AddressEntry).address)
           ) {
             valid.push({
               name: ((item as AddressEntry).name as string).trim(),
