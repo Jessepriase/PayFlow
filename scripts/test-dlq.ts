@@ -24,8 +24,7 @@ function runTest() {
   
   try {
     const output = execSync(
-      \
-px tsx scripts/replay-dlq.ts --dry-run\,
+      `npx tsx scripts/replay-dlq.ts --dry-run`,
       {
         env: {
           ...process.env,
@@ -41,13 +40,13 @@ px tsx scripts/replay-dlq.ts --dry-run\,
     console.log(output);
 
     if (output.includes("Found 1 DLQ entries.") && output.includes("Would replay")) {
-      console.log("? DLQ dry-run parsing & output looks correct.");
+      console.log("[OK] DLQ dry-run parsing & output looks correct.");
     } else {
-      console.error("? Output did not contain expected dry-run strings.");
+      console.error("[FAIL] Output did not contain expected dry-run strings.");
       process.exit(1);
     }
   } catch (err: any) {
-    console.error("? Script failed:", err.stdout, err.stderr);
+    console.error("[FAIL] Script failed:", err.stdout, err.stderr);
     process.exit(1);
   }
 

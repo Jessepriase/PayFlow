@@ -5,16 +5,23 @@ import { rotateFeeCollector, RotateContext } from "./rotate-fee-collector";
 // Define a test context to inject
 function createMockContext(): RotateContext {
   return {
-    readContractValue: async (config, server, method, args) => {
-      if (method === "get_fee_bounds") return [100, 500];
-      if (method === "get_fee_bps") return 250;
-      return null;
+    readContractValue: async (config, server, method, args, decode) => {
+      const value =
+        method === "get_fee_bounds"
+          ? [100, 500]
+          : method === "get_fee_bps"
+            ? 250
+            : null;
+      // readContractValue is generic in T: it returns decode(value) when a
+      // decoder is supplied and the raw value otherwise. The mock has to
+      // honour the same contract or callers get the wrong static type.
+      return (decode ? decode(value as never) : value) as never;
     },
     simulateRead: async () => null,
     invokeContract: async () => ({ hash: "mock-tx-hash", status: "SUCCESS" }),
     loadSorobanConfig: () => ({ contractId: "C123", adminSecretKey: "secret", rpcUrl: "mock", networkPassphrase: "mock" }),
     createServer: () => ({
-      getEvents: async () => ({ records: [] })
+      getEvents: async () => ({ events: [] })
     }) as any,
   };
 }

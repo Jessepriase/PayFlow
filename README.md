@@ -223,6 +223,15 @@ Stellar's Soroban platform uses state archiving — persistent storage entries h
 - Mainnet deployment checklist: [`docs/MAINNET-DEPLOYMENT.md`](docs/MAINNET-DEPLOYMENT.md)
 - Merchant Integration Cookbook: [`docs/MERCHANT-INTEGRATION.md`](docs/MERCHANT-INTEGRATION.md)
 
+### Operations quick-links
+
+For when something needs doing to a live deployment:
+
+- [Keeper runbook](docs/KEEPER.md) - runtime, flags and configuration for `keeper.ts`
+- [Charge outcome encoding](docs/charge-results.md) - what a `ChargeResult` is on the wire, and what the DLQ and export tooling should do with it
+- [Batch and pagination caps](docs/limits.md) - every size limit the contract enforces
+- [Operator scripts](scripts/README.md#undocumented-operator-scripts) - the maintenance tools: allowance alerts, churn analysis, migration, merchant onboarding, renewal forecasts, metrics
+
 ---
 
 ## Subscriber Churn Analysis Dashboard

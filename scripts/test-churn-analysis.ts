@@ -125,6 +125,8 @@ function runFixture(fixture: typeof fixtures[0], logic: "new" | "retention") {
       );
     }
   }
+
+}
 function testCohortAndResubscriptionLogic() {
   console.log(
     "\n--- Running Churn Analysis Cohort and Resubscription Logic Tests ---",
@@ -446,6 +448,10 @@ function runAdditionalTests() {
   assertEquals(typeof report.projection.projected_churn_count, "string", "Projection has projected churn string");
 
   console.log("[PASS] Report structure validation");
+
+  // Test: two completed cohorts (Jan + Feb) drive the projection math.
+  const REF_TIME = 1781481600;
+  const cohortEvents = [
     // Jan cohort (Starts Jan 05: 1767571200)
     {
       eventName: "subscribed",
@@ -503,7 +509,7 @@ function runAdditionalTests() {
     },
   ];
 
-  const report = calculateChurnAnalysis(events, "new", REF_TIME);
+  const projectionReport = calculateChurnAnalysis(cohortEvents, "new", REF_TIME);
 
   // Completed cohorts: Jan and Feb.
   // Average churn rate: 35.00%
@@ -513,17 +519,17 @@ function runAdditionalTests() {
   // Total current active = 10.
   // Projected churn: 10 * 0.35 = 3.50
   assertEquals(
-    report.projection.average_monthly_churn_rate,
+    projectionReport.projection.average_monthly_churn_rate,
     "35.00%",
     "Avg Monthly Churn Rate",
   );
   assertEquals(
-    report.projection.current_active_subscribers,
+    projectionReport.projection.current_active_subscribers,
     10,
     "Current Active Subscribers Count",
   );
   assertEquals(
-    report.projection.projected_churn_count,
+    projectionReport.projection.projected_churn_count,
     "3.50",
     "Projected Churn Count",
   );

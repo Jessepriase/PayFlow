@@ -7,7 +7,7 @@
  *
  * Strategy
  * ────────
- * SQLite's built-in `VACUUM INTO` (or `backup` API via better-sqlite3) gives
+ * SQLite's built-in `VACUUM INTO` gives
  * a consistent, hot-copy snapshot without locking writes on the source.  This
  * means the indexer can keep running during backup.
  *
@@ -44,6 +44,7 @@
 
 import * as fs from "fs";
 import * as path from "path";
+import { DatabaseSync } from "node:sqlite";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -75,7 +76,7 @@ export interface BackupResult {
 }
 
 // ── SQLite abstraction ────────────────────────────────────────────────────────
-// We isolate the better-sqlite3 import so tests can mock it easily.
+// We isolate the database import so tests can inject a mock instead.
 
 export interface SqliteDb {
   /** Run a VACUUM INTO backup to destPath */
@@ -89,24 +90,26 @@ export interface SqliteDb {
 }
 
 /**
- * Opens a better-sqlite3 database and wraps it with our SqliteDb interface.
+ * Opens the indexer database and wraps it with our SqliteDb interface.
  * This is the production implementation.  Tests inject a mock.
  */
 export function openDatabase(dbPath: string): SqliteDb {
-  // Dynamic import so the module can be tree-shaken or mocked in tests
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const Database = require("better-sqlite3") as typeof import("better-sqlite3");
-  const db = new Database(dbPath, { readonly: false });
+  // node:sqlite, matching indexer.ts. (This module is ESM, so the previous
+  // `require("better-sqlite3")` could never resolve, and better-sqlite3 is not
+  // a dependency. node:sqlite's DatabaseSync also has no .backup(), so the
+  // backup uses SQLite's own VACUUM INTO, which is online-safe.)
+  const db = new DatabaseSync(dbPath, { open: true });
 
   return {
     backup(destPath: string) {
-      // better-sqlite3 v9+ ships a synchronous backup() method.
-      // VACUUM INTO is an equally valid online-safe strategy; we use backup()
-      // for its progress callback support.
-      (db as any).backup(destPath);
+      // VACUUM INTO refuses to overwrite, which is the same safety property
+      // better-sqlite3's backup() provided.
+      db.exec(`VACUUM INTO '${destPath.replace(/'/g, "''")}'`);
     },
     pragmaIntegrity(): string {
-      const rows = db.pragma("integrity_check") as { integrity_check: string }[];
+      const rows = db.prepare("PRAGMA integrity_check").all() as {
+        integrity_check: string;
+      }[];
       return rows[0]?.integrity_check ?? "error";
     },
     countEvents(): number {
@@ -233,7 +236,7 @@ export function runBackup(
     sourceDb = openDb(opts.dbPath);
     result.rowCount = sourceDb.countEvents();
 
-    // better-sqlite3 backup() copies atomically to destPath
+    // VACUUM INTO writes destPath atomically and refuses to overwrite it
     sourceDb.backup(opts.outPath);
     console.log(`  ✓ Backup written (${result.rowCount} event rows)`);
   } catch (err: unknown) {
