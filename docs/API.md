@@ -645,6 +645,8 @@ pause_until(env: Env, user: Address, expiry: u64)
 
 **Pause-expiry read API:** there is **no** public `get_pause_expiry`, `get_pause`, or `paused_until` contract method. Expiry is stored via internal `storage::set_pause_expiry` / `storage::get_pause_expiry` only.
 
+For the full pause state model, auto-resume semantics, TTL considerations, and keeper/indexer guidance see [architecture/pause-lifecycle.md](./architecture/pause-lifecycle.md).
+
 CLI example:
 
 ```bash
